@@ -15,9 +15,23 @@ extern "C" {
 esp_err_t display_init(void);
 
 /**
- * @brief Create the UI using LVGL widgets
+ * @brief Check if touch calibration exists in NVS
+ *
+ * @return true if calibration exists, false otherwise
  */
-void display_create_ui(void);
+bool display_has_calibration(void);
+
+/**
+ * @brief Clear the display to black screen
+ */
+void display_clear_screen(void);
+
+/**
+ * @brief Create the UI using LVGL widgets
+ * @param skip_calibration If true, skip calibration wizard even if not calibrated
+ * @param provisioning_mode If true, show minimal provisioning UI instead of full UI
+ */
+void display_create_ui(bool skip_calibration, bool provisioning_mode);
 
 /**
  * @brief Update LVGL (call periodically from main loop)

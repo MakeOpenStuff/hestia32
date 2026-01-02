@@ -17,7 +17,7 @@
 #define TOUCH_CS   14
 #define TOUCH_IRQ  15
 #define TOUCH_MOSI TFT_MOSI
-#define TOUCH_MISO 2
+#define TOUCH_MISO 2  // Dedicated to touch, display won't use it
 #define TOUCH_SCLK TFT_SCLK
 
 // SPI Configuration

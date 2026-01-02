@@ -1,11 +1,12 @@
 # Hestia32 Firmware
 
-ESP32 firmware with WiFi provisioning, OTA updates, and factory reset support.
+ESP32 firmware with WiFi provisioning, OTA updates, ILI9488 display, resistive touch and factory reset support.
 
 ## Supported Hardware
 
 - **ESP32** (original) - e.g., NodeMCU-32S
 - **ESP32-C5** - RISC-V based ESP32 variant
+- **ILI9488 Display** - 3.5" 320x480 IPS display with XPT2046 resistive touch
 
 ## Features
 
@@ -14,20 +15,42 @@ ESP32 firmware with WiFi provisioning, OTA updates, and factory reset support.
 - Factory reset via BOOT button
 - NVS storage for WiFi credentials and configuration
 - Configurable node name and OTA server URL
+- LVGL-based graphical interface
+- Automatic touch calibration wizard on first boot
+- Resistive touch input with coordinate mapping
 
 ## Prerequisites
+
+### Display Hardware (ESP32-C5)
+- **ILI9488 3.5" IPS Display** (320x480 resolution)
+- **XPT2046 Touch Controller** (resistive)
+- See [WIRING.md](WIRING.md) for complete pin connections
+- **Important:** Display MISO must be disconnected - GPIO 2 is dedicated to touch controller
 
 ### For ESP32 (PlatformIO)
 - [PlatformIO](https://platformio.org/) installed
 - USB drivers for your ESP32 board
 
 ### For ESP32-C5 (ESP-IDF v5.5)
-- ESP-IDF v5.5.1 or later
+- ESP-IDF v5.5.2 or later (official C5 support)
 - Python 3.8+
 - CMake 3.16+
 - Ninja build system
 
 ## Building and Flashing
+
+### Clone Repository
+
+**Important:** This project uses git submodules (LVGL). Always clone with `--recursive`:
+
+```bash
+# Clone with submodules
+git clone --recursive https://github.com/your-username/hestia32-firmware.git
+cd hestia32-firmware
+
+# Or if you already cloned without --recursive:
+git submodule update --init --recursive
+```
 
 ### ESP32 (NodeMCU-32S) - PlatformIO
 
@@ -47,9 +70,9 @@ pio device monitor
 #### First Time Setup
 
 ```bash
-# Clone ESP-IDF v5.5.1 (one time only)
+# Clone ESP-IDF v5.5.2 (one time only)
 cd ~/esp
-git clone --recursive --branch v5.5.1 https://github.com/espressif/esp-idf.git esp-idf-v5.5
+git clone --recursive --branch v5.5.2 https://github.com/espressif/esp-idf.git esp-idf-v5.5
 
 # Install ESP-IDF tools for ESP32-C5 (one time only)
 cd ~/esp/esp-idf-v5.5
@@ -105,18 +128,20 @@ idf.py --preview -p /dev/ttyACM0 flash monitor
 
 ### Factory Reset
 
-To erase WiFi credentials and return to provisioning mode:
+To erase WiFi credentials, touch calibration, and return to provisioning mode:
 
 1. Power off the device
 2. Press and hold the **BOOT** button
 3. Power on the device (or press RESET while holding BOOT)
 4. Keep holding the BOOT button for **3 seconds**
 5. Release when you see "Factory reset confirmed!" in the serial monitor
-6. The device will erase credentials and reboot into provisioning mode
+6. The device will erase all NVS data and reboot into provisioning mode
 
 **BOOT Button GPIO:**
 - ESP32 (original): GPIO 0
 - ESP32-C5: GPIO 28
+
+**Troubleshooting:** Check serial monitor for "BOOT button GPIO X level: 0" when button is pressed. If it shows "1", the GPIO may be incorrect for your board.
 
 ## Configuration
 

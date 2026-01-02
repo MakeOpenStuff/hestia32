@@ -124,8 +124,8 @@ esp_err_t display_init(void)
     io_config.cs_gpio_num = TFT_CS;
     io_config.dc_gpio_num = TFT_DC;
     io_config.spi_mode = 0;
-    io_config.pclk_hz = 5 * 1000 * 1000;
-    io_config.trans_queue_depth = 5;  // Reduced from 10 for smoother transfers
+    io_config.pclk_hz = LCD_PIXEL_CLOCK_HZ;
+    io_config.trans_queue_depth = 7;  // Slightly deeper queue for better pipelining
     io_config.lcd_cmd_bits = LCD_CMD_BITS;
     io_config.lcd_param_bits = LCD_PARAM_BITS;
     ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)TFT_SPI_HOST, &io_config, &io_handle));
@@ -169,18 +169,91 @@ esp_err_t display_init(void)
         }
     }
 
-    // Minimal bring-up: skip LVGL for now to avoid old UI
-    ESP_LOGI(TAG, "Display initialized successfully (minimal mode, LVGL disabled)");
+    lv_init();
+
+    size_t buffer_size = TFT_WIDTH * LVGL_BUFFER_HEIGHT;
+    buf1 = (lv_color_t *)heap_caps_malloc(buffer_size * sizeof(lv_color_t), MALLOC_CAP_DMA);
+    buf2 = (lv_color_t *)heap_caps_malloc(buffer_size * sizeof(lv_color_t), MALLOC_CAP_DMA);
+    if (!buf1 || !buf2) {
+        ESP_LOGE(TAG, "Failed to allocate LVGL buffers");
+        return ESP_ERR_NO_MEM;
+    }
+
+    lv_disp_draw_buf_init(&disp_buf, buf1, buf2, buffer_size);
+
+    lv_disp_drv_init(&disp_drv);
+    disp_drv.hor_res = TFT_WIDTH;
+    disp_drv.ver_res = TFT_HEIGHT;
+    disp_drv.flush_cb = lvgl_flush_cb;
+    disp_drv.draw_buf = &disp_buf;
+    disp_drv.user_data = panel_handle;
+    lv_disp_drv_register(&disp_drv);
+
+    ESP_LOGI(TAG, "Display initialized successfully (LVGL enabled)");
     return ESP_OK;
 }
 
 void display_create_ui(void)
 {
-    // Minimal mode: skip creating LVGL UI
-    ESP_LOGI(TAG, "LVGL UI creation skipped (minimal mode)");
+    ESP_LOGI(TAG, "Creating heavy UI");
+
+    lv_obj_t *scr = lv_scr_act();
+    lv_obj_set_style_bg_color(scr, lv_color_hex(0x101820), 0);
+
+    int cols = 4, rows = 6;
+    int tile_w = TFT_WIDTH / cols;
+    int tile_h = TFT_HEIGHT / rows;
+    uint32_t colors[8] = {0x2364AA,0x3DA5D9,0x73BFB8,0xFEC601,0xEA7317,0x6C2E2F,0x8A2BE2,0x2ECC71};
+    int ci = 0;
+    for (int y = 0; y < rows; y++) {
+        for (int x = 0; x < cols; x++) {
+            lv_obj_t *tile = lv_obj_create(scr);
+            lv_obj_set_size(tile, tile_w-2, tile_h-2);
+            lv_obj_set_style_bg_color(tile, lv_color_hex(colors[ci%8]), 0);
+            lv_obj_set_style_radius(tile, 6, 0);
+            lv_obj_set_pos(tile, x*tile_w+1, y*tile_h+1);
+            ci++;
+        }
+    }
+
+    lv_obj_t *bar = lv_obj_create(scr);
+    lv_obj_set_size(bar, 20, TFT_HEIGHT-40);
+    lv_obj_set_style_bg_color(bar, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_pos(bar, 10, 20);
+
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, bar);
+    lv_anim_set_values(&a, 10, TFT_WIDTH-30);
+    lv_anim_set_time(&a, 3000);
+    lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_set_exec_cb(&a, (lv_anim_exec_xcb_t)lv_obj_set_x);
+    lv_anim_start(&a);
+
+    lv_obj_t *fps = lv_label_create(scr);
+    lv_label_set_text(fps, "FPS:");
+    lv_obj_set_style_text_color(fps, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_align(fps, LV_ALIGN_TOP_LEFT, 8, 8);
+
+    static uint32_t last_t = 0;
+    static uint32_t frames = 0;
+    lv_timer_t *tmr = lv_timer_create([](lv_timer_t *t){
+        frames++;
+        uint32_t now = lv_tick_get();
+        if (now - last_t >= 1000) {
+            char buf[32];
+            lv_snprintf(buf, sizeof(buf), "FPS:%lu", (unsigned long)frames);
+            lv_label_set_text((lv_obj_t*)t->user_data, buf);
+            frames = 0;
+            last_t = now;
+        }
+    }, 16, fps);
+    (void)tmr;
+
+    ESP_LOGI(TAG, "Heavy UI created");
 }
 
 void display_update(void)
 {
-    // Minimal mode: no LVGL timer
+    lv_timer_handler();
 }

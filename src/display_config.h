@@ -22,12 +22,12 @@
 
 // SPI Configuration
 #define TFT_SPI_HOST    SPI2_HOST
-#define LCD_PIXEL_CLOCK_HZ (40 * 1000 * 1000)
+#define LCD_PIXEL_CLOCK_HZ (20 * 1000 * 1000)
 #define LCD_CMD_BITS    8
 #define LCD_PARAM_BITS  8
 
 // LVGL Configuration
 #define LVGL_TICK_PERIOD_MS 2
-#define LVGL_BUFFER_HEIGHT  40  // Optimized for available RAM
+#define LVGL_BUFFER_HEIGHT  80  // Larger buffers to improve throughput
 
 #endif // DISPLAY_CONFIG_H

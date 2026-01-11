@@ -134,7 +134,6 @@ gcc -Wall -Wextra -std=c11 -I. src/thermostat.c tests/test_thermostat.c -o test_
 
 The test suite validates:
 
-**Thermal Logic Isolation Tests (Non-HVAC):**
 1. **Configuration validation** - Domain limits, setpoint sanity checks
 2. **Hysteresis protection** - Prevents rapid state changes (300s delay)
 3. **Comfort deadband** - Temperature activation thresholds (±0.5°C)
@@ -144,8 +143,6 @@ The test suite validates:
 7. **Mutual exclusion** - Heating and cooling never run simultaneously
 8. **Sensor failure safety** - Automatic shutdown on sensor faults
 9. **Temperature units** - Celsius and Fahrenheit conversion
-
-**HVAC Integration Tests (Fan Coordination):**
 10. **Fan control** - Pre-run (30s), post-run (60s), and manual override
 11. **Humidity control** - Humidification and dehumidification with deadband
 12. **Hot water demand** - On-demand hot water heating
@@ -157,6 +154,8 @@ The test suite validates:
 18. **Stage 2 cooling + HVAC** - Multi-stage cooling with fan timing
 19. **Mutual exclusion + HVAC** - No simultaneous operation through all fan phases
 20. **Sensor failure + HVAC** - Immediate shutdown including fan (safety critical)
+21. **Open window detection** - Detects rapid temperature drops, suspends heating to save energy
+22. **Open window false positive prevention** - Validates gradual changes don't trigger detection
 
 **Scenario Testing:**
 - **24-hour simulation** - Complete heating cycle with realistic temperature changes

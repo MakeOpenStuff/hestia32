@@ -19,6 +19,64 @@ static inline bool time_elapsed(uint32_t start_time, uint32_t now, uint32_t dura
 // THERMAL DOMAIN LOGIC
 // ============================================================================
 
+
+// ============================================================================
+// Open Window Detection
+// ============================================================================
+
+static void update_open_window_detection(
+	const ThermostatConfig* config,
+	const ThermostatInput* input,
+	ThermostatState* state
+) {
+	if (!config->open_window_detection_enabled || !input->sensors_valid) {
+		state->open_window_detected = false;
+		return;
+	}
+
+	const uint32_t now = input->now_seconds;
+	const float current_temp = input->temperature;
+
+	// Update temperature history (circular buffer)
+	state->temperature_history[state->temperature_history_index] = current_temp;
+	state->temperature_history_times[state->temperature_history_index] = now;
+	uint8_t newest_idx = state->temperature_history_index;  // Current index has newest data
+	state->temperature_history_index = (state->temperature_history_index + 1) % 3;
+
+	// If window already detected, check if suspend period has elapsed
+	if (state->open_window_detected) {
+		if (time_elapsed(state->open_window_detect_time, now,
+						 config->open_window_suspend_time_sec)) {
+			state->open_window_detected = false;
+		}
+		return;
+	}
+
+	// Check for rapid temperature drop
+	// Compare oldest and newest temperature readings
+	uint8_t oldest_idx = state->temperature_history_index;  // After increment, this points to oldest
+
+	// Need enough time span for valid detection
+	if (state->temperature_history_times[oldest_idx] == 0) {
+		return;  // Not enough history yet
+	}
+
+	uint32_t time_span = now - state->temperature_history_times[oldest_idx];
+	if (time_span < config->open_window_time_window_sec) {
+		return;  // Not enough time elapsed for detection
+	}
+
+	// Calculate temperature drop (positive value means temperature decreased)
+	float temp_drop = state->temperature_history[oldest_idx] - state->temperature_history[newest_idx];
+
+	// Detect open window: significant drop over time window, only when heating might be active
+	if (temp_drop >= config->open_window_temp_drop_threshold &&
+			current_temp < config->heat_setpoint) {
+		state->open_window_detected = true;
+		state->open_window_detect_time = now;
+	}
+}
+
 static void update_thermal_domain(
 		const ThermostatConfig* config,
 		const ThermostatInput* input,
@@ -36,6 +94,17 @@ static void update_thermal_domain(
 		}
 
 		const float temp = input->temperature;
+
+	// Suspend heating if open window detected
+	if (state->open_window_detected &&
+			(state->thermal_state == THERMAL_STATE_HEATING ||
+			 state->thermal_state == THERMAL_STATE_HEATING_STAGE2)) {
+		state->thermal_state = THERMAL_STATE_IDLE;
+		state->thermal_pending = false;
+		output->heating_stage1 = false;
+		output->heating_stage2 = false;
+		return;
+	}
 		const uint32_t now = input->now_seconds;
 		const float deadband = get_deadband(config);
 		const float heat_setpoint = config->heat_setpoint;
@@ -51,7 +120,8 @@ static void update_thermal_domain(
 						bool heating_needed = config->heating_enabled &&
 																 temp < (heat_setpoint - deadband) &&
 																 time_elapsed(state->last_state_change_time, now,
-																						config->hysteresis_period_sec);
+																						config->hysteresis_period_sec) &&
+									 !state->open_window_detected;
 
 						bool cooling_needed = config->cooling_enabled &&
 																 temp > (cool_setpoint + deadband) &&
@@ -456,6 +526,7 @@ void thermostat_update(
 		memset(output, 0, sizeof(ThermostatOutput));
 
 		// Update each domain independently
+	update_open_window_detection(config, input, state);
 		update_thermal_domain(config, input, state, output);
 		update_fan_domain(config, input, state, output, output);
 		update_humidity_domain(config, input, state, output);

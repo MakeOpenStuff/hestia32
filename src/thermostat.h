@@ -24,6 +24,16 @@ extern "C" {
 #define DEFAULT_FAN_PRE_RUN_SEC 30    // Fan starts 30s before thermal
 #define DEFAULT_FAN_POST_RUN_SEC 60   // Fan continues 60s after thermal
 
+// Open window detection defaults
+#define DEFAULT_OPEN_WINDOW_TEMP_DROP_C     2.0f  // 2°C drop triggers detection
+#define DEFAULT_OPEN_WINDOW_TIME_WINDOW_SEC 180   // Measure drop over 3 minutes
+#define DEFAULT_OPEN_WINDOW_SUSPEND_SEC     900   // Suspend heating for 15 minutes
+
+// Open window detection defaults
+#define DEFAULT_OPEN_WINDOW_TEMP_DROP_C     2.0f  // 2°C drop triggers detection
+#define DEFAULT_OPEN_WINDOW_TIME_WINDOW_SEC 180   // Measure drop over 3 minutes
+#define DEFAULT_OPEN_WINDOW_SUSPEND_SEC     900   // Suspend heating for 15 minutes
+
 // Default temperature thresholds (Celsius)
 #define DEFAULT_COMFORT_DEADBAND_C          0.5f
 #define DEFAULT_ECO_DEADBAND_C              1.5f
@@ -65,6 +75,12 @@ typedef struct {
 		bool fan_enabled;
 		bool humidity_control_enabled;
 		bool hot_water_enabled;
+
+	// Open window detection
+	bool open_window_detection_enabled;
+	float open_window_temp_drop_threshold;   // Temperature drop in degrees to trigger detection
+	uint32_t open_window_time_window_sec;    // Time window to measure the drop (e.g., 3 minutes)
+	uint32_t open_window_suspend_time_sec;   // How long to suspend heating after detection (e.g., 15 minutes)
 
 		// Setpoints (in configured unit)
 		float heat_setpoint;
@@ -138,6 +154,13 @@ typedef struct {
 		bool thermal_pending;           // Thermal wants to activate (waiting for fan pre-run)
 		uint32_t thermal_pending_time;  // When thermal activation was requested
 		uint32_t thermal_stop_time;     // When thermal stopped (for post-run)
+
+	// Open window detection
+	bool open_window_detected;      // Currently in open window mode
+	uint32_t open_window_detect_time;   // When open window was detected
+	float temperature_history[3];    // Last 3 temperature readings for trend detection
+	uint32_t temperature_history_times[3];  // Timestamps for temperature readings
+	uint8_t temperature_history_index;  // Current position in circular buffer
 } ThermostatState;
 
 // ============================================================================

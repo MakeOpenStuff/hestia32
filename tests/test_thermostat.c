@@ -56,7 +56,7 @@
 
 //TODO: Tests need verification they cover correctly all cases
 // Test result tracking
-#define MAX_TESTS 20
+#define MAX_TESTS 22
 #define MAX_NAME_LEN 64
 
 static struct {
@@ -1753,6 +1753,184 @@ static void test_20_sensor_failure_hvac(void) {
 }
 
 // ============================================================================
+// TEST 21: Open Window Detection
+// ============================================================================
+
+static void test_21_open_window_detection(void) {
+	TEST_START(21, "Open Window Detection");
+
+	ThermostatConfig config;
+	thermostat_config_init(&config);
+	config.heating_enabled = true;
+	config.cooling_enabled = false;
+	config.fan_enabled = false;
+	config.heat_setpoint = 20.0f;
+	config.hysteresis_period_sec = 0;  // Immediate response
+	config.min_cycle_time_sec = 0;
+
+	// Enable open window detection
+	config.open_window_detection_enabled = true;
+	config.open_window_temp_drop_threshold = 2.0f;  // 2°C drop
+	config.open_window_time_window_sec = 180;       // 3 minutes
+	config.open_window_suspend_time_sec = 900;      // 15 minutes suspend
+
+	const char* params[] = {
+		"heating_enabled", "heat_setpoint"
+	};
+	print_related_config("Open Window Detection", &config, params, 2);
+	printf("  Open Window Temp Drop Threshold: %.1f°C\n", config.open_window_temp_drop_threshold);
+	printf("  Open Window Time Window: %u seconds\n", config.open_window_time_window_sec);
+	printf("  Open Window Suspend Time: %u seconds\n", config.open_window_suspend_time_sec);
+
+	ThermostatState state;
+	ThermostatInput input = {0};
+	ThermostatOutput output;
+
+	thermostat_state_init(&state, 0);
+	input.sensors_valid = true;
+
+	printf("\nTest Execution:\n");
+
+	// Start at comfortable temperature, heating should not activate
+	input.temperature = 21.0f;
+	input.now_seconds = 0;
+	thermostat_update(&config, &input, &state, &output);
+	printf("  t=0s:    Temp=21.0°C, Heating=%d, Window=%d\n",
+				 output.heating_stage1, state.open_window_detected);
+	assert(output.heating_stage1 == false);
+	assert(state.open_window_detected == false);
+
+	// Temperature drops below setpoint, heating should activate
+	input.temperature = 19.0f;
+	input.now_seconds = 60;
+	thermostat_update(&config, &input, &state, &output);
+	printf("  t=60s:   Temp=19.0°C, Heating=%d, Window=%d\n",
+				 output.heating_stage1, state.open_window_detected);
+	assert(output.heating_stage1 == true);
+	assert(state.open_window_detected == false);
+
+	// Rapid temperature drop (window opened) - still heating
+	input.temperature = 18.0f;
+	input.now_seconds = 120;
+	thermostat_update(&config, &input, &state, &output);
+	printf("  t=120s:  Temp=18.0°C, Heating=%d, Window=%d\n",
+				 output.heating_stage1, state.open_window_detected);
+
+	// After detection window, should detect open window and stop heating
+	input.temperature = 16.5f;  // 4.5°C total drop from start
+	input.now_seconds = 240;     // 4 minutes - exceeds 3 min detection window
+	thermostat_update(&config, &input, &state, &output);
+	printf("  t=240s:  Temp=16.5°C, Heating=%d, Window=%d (DETECTED)\n",
+				 output.heating_stage1, state.open_window_detected);
+	assert(state.open_window_detected == true);
+	assert(output.heating_stage1 == false);  // Heating suspended
+
+	// Temperature stabilizes, but still in suspend period
+	input.temperature = 16.5f;
+	input.now_seconds = 500;  // 8 minutes since detection
+	thermostat_update(&config, &input, &state, &output);
+	printf("  t=500s:  Temp=16.5°C, Heating=%d, Window=%d (suspended)\n",
+				 output.heating_stage1, state.open_window_detected);
+	assert(state.open_window_detected == true);
+	assert(output.heating_stage1 == false);
+
+	// After suspend period, window detection clears
+	input.temperature = 17.0f;
+	input.now_seconds = 1200;  // 20 minutes (exceeds 15 min suspend)
+	thermostat_update(&config, &input, &state, &output);
+	printf("  t=1200s: Temp=17.0°C, Heating=%d, Window=%d (cleared)\n",
+				 output.heating_stage1, state.open_window_detected);
+	assert(state.open_window_detected == false);
+
+	// Heating should resume since temp still below setpoint
+	input.now_seconds = 1210;
+	thermostat_update(&config, &input, &state, &output);
+	printf("  t=1210s: Temp=17.0°C, Heating=%d, Window=%d (resumed)\n",
+				 output.heating_stage1, state.open_window_detected);
+	assert(output.heating_stage1 == true);
+
+	TEST_PASS(21, "Open Window Detection");
+}
+
+// ============================================================================
+// TEST 22: Open Window Detection - No False Positives
+// ============================================================================
+
+static void test_22_open_window_no_false_positives(void) {
+	TEST_START(22, "Open Window Detection - No False Positives");
+
+	ThermostatConfig config;
+	thermostat_config_init(&config);
+	config.heating_enabled = true;
+	config.cooling_enabled = false;
+	config.fan_enabled = false;
+	config.heat_setpoint = 20.0f;
+	config.hysteresis_period_sec = 0;
+	config.min_cycle_time_sec = 0;
+
+	// Enable open window detection
+	config.open_window_detection_enabled = true;
+	config.open_window_temp_drop_threshold = 2.0f;
+	config.open_window_time_window_sec = 180;
+	config.open_window_suspend_time_sec = 900;
+
+	const char* params[] = {
+		"heating_enabled", "heat_setpoint"
+	};
+	print_related_config("Open Window False Positive Test", &config, params, 2);
+	printf("  Open Window Temp Drop Threshold: %.1f°C\n", config.open_window_temp_drop_threshold);
+
+	ThermostatState state;
+	ThermostatInput input = {0};
+	ThermostatOutput output;
+
+	thermostat_state_init(&state, 0);
+	input.sensors_valid = true;
+
+	printf("\nTest Execution:\n");
+
+	// Gradual cooling should NOT trigger open window detection
+	input.temperature = 21.0f;
+	input.now_seconds = 0;
+	thermostat_update(&config, &input, &state, &output);
+	printf("  t=0s:    Temp=21.0°C, Window=%d\n", state.open_window_detected);
+
+	// Slow drop: 0.5°C per minute (normal cooling)
+	input.temperature = 20.5f;
+	input.now_seconds = 60;
+	thermostat_update(&config, &input, &state, &output);
+	printf("  t=60s:   Temp=20.5°C, Window=%d\n", state.open_window_detected);
+
+	input.temperature = 20.0f;
+	input.now_seconds = 120;
+	thermostat_update(&config, &input, &state, &output);
+	printf("  t=120s:  Temp=20.0°C, Window=%d\n", state.open_window_detected);
+
+	input.temperature = 19.5f;
+	input.now_seconds = 180;
+	thermostat_update(&config, &input, &state, &output);
+	printf("  t=180s:  Temp=19.5°C, Window=%d\n", state.open_window_detected);
+
+	input.temperature = 19.0f;
+	input.now_seconds = 240;
+	thermostat_update(&config, &input, &state, &output);
+	printf("  t=240s:  Temp=19.0°C, Window=%d (only 2°C drop - at threshold)\n",
+				 state.open_window_detected);
+	assert(state.open_window_detected == false);  // Gradual drop should not trigger
+
+	// Should not trigger even when below threshold, as drop was gradual
+	input.temperature = 18.5f;
+	input.now_seconds = 300;
+	thermostat_update(&config, &input, &state, &output);
+	printf("  t=300s:  Temp=18.5°C, Window=%d (gradual cooling OK)\n",
+				 state.open_window_detected);
+	assert(state.open_window_detected == false);
+
+	TEST_PASS(22, "Open Window Detection - No False Positives");
+}
+
+
+// ============================================================================
 // SIMULATION SCENARIO
 // ============================================================================
 
@@ -1858,8 +2036,10 @@ int main(void) {
 		test_16_eco_deadband_hvac();
 		test_17_heat_stage2_hvac();
 		test_18_cool_stage2_hvac();
-		test_19_mutual_exclusion_hvac();
+	test_19_mutual_exclusion_hvac();
 		test_20_sensor_failure_hvac();
+	test_21_open_window_detection();
+	test_22_open_window_no_false_positives();
 
 		simulate_scenario();
 		print_test_summary();

@@ -8,3 +8,4 @@ logs/
 build/
 sdkconfig.old
 test_thermostat
+dependencies.lock

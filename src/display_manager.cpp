@@ -52,6 +52,7 @@ static volatile uint32_t s_flush_count = 0;
 // Touch
 static spi_device_handle_t s_touch_dev = NULL;
 static lv_obj_t *touch_dot = NULL;
+static TaskHandle_t s_lvgl_task_handle = NULL;
 static lv_indev_t *s_touch_indev = NULL;
 static bool sSwapXY = false;
 static bool sFlipX = false;
@@ -709,8 +710,53 @@ void display_create_ui(bool skip_calibration, bool provisioning_mode)
     ESP_LOGI(TAG, "Heavy UI created");
 }
 
+// LVGL task that runs continuously
+static void lvgl_task(void *arg)
+{
+    ESP_LOGI(TAG, "LVGL task started on core %d", xPortGetCoreID());
+
+    while (1) {
+        // Call LVGL timer handler
+        lv_timer_handler();
+
+        // Update touch dot visibility/position if pressed
+        if (s_touch_indev && touch_dot) {
+            if (s_touch_indev->proc.state == LV_INDEV_STATE_PRESSED) {
+                lv_point_t p;
+                lv_indev_get_point(s_touch_indev, &p);
+                lv_obj_clear_flag(touch_dot, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_set_pos(touch_dot, p.x - 5, p.y - 5);
+            } else {
+                lv_obj_add_flag(touch_dot, LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+
+        // Run at ~100Hz for responsive UI
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+void display_start_lvgl_task(void)
+{
+    if (s_lvgl_task_handle != NULL) {
+        ESP_LOGW(TAG, "LVGL task already running");
+        return;
+    }
+
+    // Create LVGL task with priority 3 (medium priority)
+    // Priority: WiFi/Network=20-23, DNS=5, LVGL=3, Display_prov=2
+    BaseType_t ret = xTaskCreate(lvgl_task, "lvgl", 8192, NULL, 3, &s_lvgl_task_handle);
+    if (ret != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create LVGL task");
+        s_lvgl_task_handle = NULL;
+    } else {
+        ESP_LOGI(TAG, "LVGL task created successfully");
+    }
+}
+
 void display_update(void)
 {
+    // Legacy function - now deprecated, kept for compatibility during calibration
     uint32_t now = lv_tick_get();
     if (now - s_last_handler_ms >= 40) { // ~25 FPS max
         lv_timer_handler();

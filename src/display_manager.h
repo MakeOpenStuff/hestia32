@@ -35,8 +35,15 @@ void display_create_ui(bool skip_calibration, bool provisioning_mode);
 
 /**
  * @brief Update LVGL (call periodically from main loop)
+ * @note This is now deprecated - LVGL runs in its own task after display_start_lvgl_task()
  */
 void display_update(void);
+
+/**
+ * @brief Start the dedicated LVGL task for continuous UI updates
+ * @note Call this after display_init() and display_create_ui() to start background updates
+ */
+void display_start_lvgl_task(void);
 
 #ifdef __cplusplus
 }

@@ -136,8 +136,8 @@ void app_main(void) {
         // Wait for DHCP to initialize
         vTaskDelay(pdMS_TO_TICKS(2000));
 
-        // Initialize display on a LOW priority task to not interfere with DHCP
-        xTaskCreate(display_provisioning_task, "display_prov", 4096, NULL, 1, NULL);
+        // Initialize display on a low priority task (priority 2) to not interfere with DHCP
+        xTaskCreate(display_provisioning_task, "display_prov", 4096, NULL, 2, NULL);
 
         // Main task just waits (device will restart after provisioning)
         while (1) {
@@ -150,6 +150,7 @@ void app_main(void) {
     ret = display_init();
     if (ret == ESP_OK) {
         display_create_ui(false, false);  // Load calibration from NVS, show full UI
+        display_start_lvgl_task();  // Start dedicated LVGL task for UI updates
         ESP_LOGI(TAG, "Display initialized successfully");
     } else {
         ESP_LOGE(TAG, "Display initialization failed");
@@ -178,9 +179,12 @@ void app_main(void) {
         ESP_LOGE(TAG, "OTA initialization failed");
     }
 
-    // Main loop
+    // Main task can now suspend - LVGL runs in its own task
+    ESP_LOGI(TAG, "Main initialization complete. Main task suspending.");
+
+    // Optional: Add application logic here or just suspend
     while (1) {
-        display_update();
-        vTaskDelay(pdMS_TO_TICKS(10));
+        // Main task suspended, other tasks (LVGL, WiFi, etc.) continue running
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }

@@ -4,7 +4,6 @@ ESP32 firmware with WiFi provisioning, OTA updates, ILI9488 display, resistive t
 
 ## Supported Hardware
 
-- **ESP32** (original) - e.g., NodeMCU-32S
 - **ESP32-C5** - RISC-V based ESP32 variant
 - **ILI9488 Display** - 3.5" 320x480 IPS display with XPT2046 resistive touch
 
@@ -240,7 +239,7 @@ Edit `src/config.h` to customize:
 #define APP_VERSION "1.0.0"               // Firmware version
 ```
 
-## Project Structure
+## Project Structure //TODO: Needs update
 
 ```
 hestia32-firmware/

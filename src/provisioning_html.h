@@ -1,7 +1,7 @@
-#ifndef WEB_PROVISIONING_H
-#define WEB_PROVISIONING_H
+#ifndef PROVISIONING_HTML_H
+#define PROVISIONING_HTML_H
 
-// Minimal HTML page for WiFi provisioning
+// HTML page for WiFi provisioning web interface
 static const char html_page[] = R"rawliteral(<!DOCTYPE html>
 <html>
 <head>

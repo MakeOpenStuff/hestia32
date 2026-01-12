@@ -9,4 +9,4 @@ idf_component_register(SRCS ${app_sources} ${app_sources_cpp}
                        REQUIRES driver esp_wifi esp_event nvs_flash esp_netif
                                 esp_http_client esp_http_server esp_https_ota
                                 app_update bootloader_support wifi_provisioning
-                                protocomm json spi_flash esp_lcd lvgl)
+                                protocomm json spi_flash esp_lcd lvgl esp_lcd_ili9488)

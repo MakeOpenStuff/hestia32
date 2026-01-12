@@ -1,3 +1,18 @@
+/**
+ * @file thermostat.h
+ * @brief Thermostat control logic with multi-stage heating/cooling
+ *
+ * NOTE: This module is not currently integrated into main.c
+ *       It will be used in future releases for HVAC control
+ *
+ * Features:
+ * - Multi-stage heating and cooling
+ * - Comfort/Eco modes with configurable deadbands
+ * - Open window detection
+ * - Delay timers for compressor and stage changes
+ * - Emergency shutoff and fault detection
+ */
+
 #ifndef THERMOSTAT_H
 #define THERMOSTAT_H
 

@@ -1,6 +1,6 @@
 #include "wifi_provisioning.h"
 #include "config.h"
-#include "web_provisioning.h"
+#include "provisioning_html.h"
 
 #include <string.h>
 #include "esp_log.h"

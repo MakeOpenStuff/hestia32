@@ -1,3 +1,11 @@
+/**
+ * @file thermostat.c
+ * @brief Thermostat control logic with multi-stage heating/cooling
+ *
+ * NOTE: This module is not currently integrated into main.c
+ *       It will be used in future releases for HVAC control
+ */
+
 #include "thermostat.h"
 #include <string.h>
 

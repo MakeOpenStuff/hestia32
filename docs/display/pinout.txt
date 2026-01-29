@@ -1,0 +1,33 @@
+# Product parameters:
+
+Size :3.5 inch
+Type :TFT
+Drive IC:
+TN-ILI9488 (Wide View)
+IPS-ILI9488(IPS Full View)
+Resolution:480*320 pixel
+Module interface:4-wire SPI interface
+Effective display area (AA area):48.96*73.44 mm
+Dimensions of module PCB bottom plate:55.1*96.18 mm
+VCC supply voltage:3.3 V~5 V
+Logic IO port voltage:3.3V(TTL)
+Power consumption:about 90mA
+Product weight:25(g)
+
+
+# Interface definition
+
+1/VCC/Power input (3.3 V~5V)
+2/GND/Power supply ground
+3/CS/LCD/chip select (CS)
+4/RESET/LCD reset
+5/DC/LCD Bus command/data selection
+6/SDI(MOSI)LCD SPI Display bus data input
+7/SCK/LCD SPI Display bus clock signal
+8/LED/LCD Backlight control (high level lighting)
+9/SDO(MISO)LCD SPI Displays the total data input/output
+10/T_CLK/Touch panel SPI bus clock signal
+11/T_CS/Chip selection of SPI bus for touch panel
+12/T_DIN/Touch panel SPI bus data input
+13/T_DO/Touch panel SPI bus data output
+14/T_IRQ/Touch panel interrupts IRQ signal

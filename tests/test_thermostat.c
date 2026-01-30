@@ -82,14 +82,14 @@ static void simulate_scenario(void);
 } while(0)
 
 #define TEST_PASS(num, ...) do { \
-		printf(COLOR_GREEN "✓ TEST %d PASSED: " __VA_ARGS__ COLOR_RESET "\n", num); \
+		printf(COLOR_GREEN "[PASS] TEST %d: " __VA_ARGS__ COLOR_RESET "\n", num); \
 		test_results[total_tests].passed = true; \
 		total_tests++; \
 		passed_tests++; \
 } while(0)
 
 #define TEST_FAIL(num, ...) do { \
-		printf(COLOR_RED "✗ TEST %d FAILED: " __VA_ARGS__ COLOR_RESET "\n", num); \
+		printf(COLOR_RED "[FAIL] TEST %d: " __VA_ARGS__ COLOR_RESET "\n", num); \
 		test_results[total_tests].passed = false; \
 		total_tests++; \
 } while(0)
@@ -202,33 +202,33 @@ static void test_1_config_validation(void) {
 
 		// Valid default config
 		assert(thermostat_config_validate(&config));
-		printf("  ✓ Default config is valid\n");
+		printf("  [OK] Default config is valid\n");
 
 		// Stage 2 without stage 1 should fail
 		config.heating_stage2_enabled = true;
 		config.heating_enabled = false;
 		assert(!thermostat_config_validate(&config));
-		printf("  ✓ Heating stage 2 without stage 1 correctly rejected\n");
+		printf("  [OK] Heating stage 2 without stage 1 correctly rejected\n");
 
 		// Reset
 		thermostat_config_init(&config);
 		config.cooling_stage2_enabled = true;
 		config.cooling_enabled = false;
 		assert(!thermostat_config_validate(&config));
-		printf("  ✓ Cooling stage 2 without stage 1 correctly rejected\n");
+		printf("  [OK] Cooling stage 2 without stage 1 correctly rejected\n");
 
 		// Heat setpoint >= cool setpoint should fail
 		thermostat_config_init(&config);
 		config.heat_setpoint = 25.0f;
 		config.cool_setpoint = 20.0f;
 		assert(!thermostat_config_validate(&config));
-		printf("  ✓ Invalid setpoint order (heat >= cool) correctly rejected\n");
+		printf("  [OK] Invalid setpoint order (heat >= cool) correctly rejected\n");
 
 		// Equal setpoints should also fail
 		config.heat_setpoint = 22.0f;
 		config.cool_setpoint = 22.0f;
 		assert(!thermostat_config_validate(&config));
-		printf("  ✓ Equal setpoints correctly rejected\n");
+		printf("  [OK] Equal setpoints correctly rejected\n");
 
 		TEST_PASS(1, "Configuration Validation - Domain Dependencies");
 }
@@ -675,7 +675,7 @@ static void test_7_setpoint_mutual_exclusion(void) {
 
 		// Verify no simultaneous operation at any point
 		assert(!(output.heating_stage1 && output.cooling_stage1));
-		printf("\n" COLOR_GREEN "✓ Mutual exclusion verified: heating and cooling never run together" COLOR_RESET "\n");
+		printf("\n" COLOR_GREEN "[OK] Mutual exclusion verified: heating and cooling never run together" COLOR_RESET "\n");
 
 		TEST_PASS(7, "Heat/Cool Setpoints - Mutual Exclusion");
 }
@@ -1095,7 +1095,7 @@ static void test_12_temperature_unit(void) {
 		printf("  Fahrenheit: temp=%.1f°F (at setpoint): heating=%d " COLOR_GREEN "(OFF)" COLOR_RESET "\n",
 					 input.temperature, output.heating_stage1);
 
-		printf("\n" COLOR_GREEN "✓ Both temperature units work correctly" COLOR_RESET "\n");
+		printf("\n" COLOR_GREEN "[OK] Both temperature units work correctly" COLOR_RESET "\n");
 
 		TEST_PASS(12, "Temperature Unit - Celsius vs Fahrenheit");
 }
@@ -1680,7 +1680,7 @@ static void test_19_mutual_exclusion_hvac(void) {
 		printf("  t=%4us: heat=%d, cool=%d, fan=%d " COLOR_GREEN "(idle, all OFF)" COLOR_RESET "\n",
 					 input.now_seconds, output.heating_stage1, output.cooling_stage1, output.fan);
 
-		printf("\n" COLOR_GREEN "✓ Mutual exclusion verified throughout all phases" COLOR_RESET "\n");
+		printf("\n" COLOR_GREEN "[OK] Mutual exclusion verified throughout all phases" COLOR_RESET "\n");
 
 		TEST_PASS(19, "Mutual Exclusion - HVAC Integration");
 }
@@ -1936,12 +1936,7 @@ static void test_22_open_window_no_false_positives(void) {
 // ============================================================================
 
 static void test_23_boost_feature(void) {
-	printf("DEBUG: test_23_boost_feature() started\n");
-	fflush(stdout);
 	TEST_START(23, "Boost Feature - Heating, Cooling, Hot Water");
-	fflush(stdout);
-
-	printf("DEBUG: Initializing config\n");
 	ThermostatConfig config;
 	thermostat_config_init(&config);
 	config.heating_enabled = true;
@@ -1951,30 +1946,25 @@ static void test_23_boost_feature(void) {
 	config.heat_setpoint = 20.0f;
 	config.cool_setpoint = 24.0f;
 
-	printf("DEBUG: Initializing state\n");
 	ThermostatState state;
 	ThermostatInput input = {0};
 	ThermostatOutput output;
 	thermostat_state_init(&state, 0);
 	input.sensors_valid = true;
 
-	printf("DEBUG: Simulating boost activation for heating\n");
-	// Simulate boost activation for heating
+	// Test boost activation for heating
 	uint32_t now = 1000;
-	thermostat_boost_activate(&state, "heating", now, 300); // 5 min boost
-	input.temperature = 25.0f; // Well above heat setpoint
+	thermostat_boost_activate(&state, "heating", now, 300);
+	input.temperature = 25.0f;
 	input.now_seconds = now;
-	printf("DEBUG: Calling thermostat_update for heating\n");
 	thermostat_update(&config, &input, &state, &output);
-	printf("DEBUG: Returned from thermostat_update\n");
 	assert(output.heating_stage1 == true);
 	assert(output.heating_stage2 == false);
 	printf("  Heating boost active: heating_stage1=%d, heating_stage2=%d\n", output.heating_stage1, output.heating_stage2);
 
-	printf("DEBUG: Simulating boost activation for cooling\n");
-	// Cancel heating boost before testing cooling (to avoid mutual exclusion)
+	// Cancel heating boost before testing cooling
 	thermostat_boost_cancel(&state, "heating");
-	// Simulate boost activation for cooling
+	// Test boost activation for cooling
 	thermostat_boost_activate(&state, "cooling", now, 300);
 	input.temperature = 15.0f; // Well below cool setpoint
 	input.now_seconds = now;
@@ -1983,10 +1973,9 @@ static void test_23_boost_feature(void) {
 	assert(output.cooling_stage2 == false);
 	printf("  Cooling boost active: cooling_stage1=%d, cooling_stage2=%d\n", output.cooling_stage1, output.cooling_stage2);
 
-	printf("DEBUG: Simulating boost activation for hot water\n");
 	// Cancel cooling boost before testing hot water
 	thermostat_boost_cancel(&state, "cooling");
-	// Simulate boost activation for hot water
+	// Test boost activation for hot water
 	thermostat_boost_activate(&state, "hot_water", now, 300);
 	input.hot_water_demand = false;
 	input.now_seconds = now;
@@ -1994,31 +1983,22 @@ static void test_23_boost_feature(void) {
 	assert(output.hot_water == true);
 	printf("  Hot water boost active: hot_water=%d\n", output.hot_water);
 
-	printf("DEBUG: Simulating boost expiration\n");
-	// Reactivate all boosts for expiration test (at different times to avoid mutual exclusion)
+	// Test boost expiration
 	thermostat_boost_activate(&state, "heating", now, 300);
-	thermostat_boost_activate(&state, "cooling", now + 1, 299); // Different time but same end
+	thermostat_boost_activate(&state, "cooling", now + 1, 299);
 	thermostat_boost_activate(&state, "hot_water", now, 300);
 	// Set neutral temperature so normal logic doesn't activate after expiration
 	input.temperature = 22.0f; // Between heat and cool setpoints
 	input.hot_water_demand = false;
 	// Simulate boost expiration
 	input.now_seconds = now + 301;
-	printf("DEBUG: now + 301 = %u\n", input.now_seconds);
-	printf("DEBUG: boost_end_time_heating=%u, boost_end_time_cooling=%u, boost_end_time_hot_water=%u\n",
-	       state.boost_end_time_heating, state.boost_end_time_cooling, state.boost_end_time_hot_water);
 	thermostat_update(&config, &input, &state, &output);
-	printf("DEBUG: After update - heating_stage1=%d, cooling_stage1=%d, hot_water=%d\n",
-	       output.heating_stage1, output.cooling_stage1, output.hot_water);
-	printf("DEBUG: boost_active_heating=%d, boost_active_cooling=%d, boost_active_hot_water=%d\n",
-	       state.boost_active_heating, state.boost_active_cooling, state.boost_active_hot_water);
 	assert(output.heating_stage1 == false);
 	assert(output.cooling_stage1 == false);
 	assert(output.hot_water == false);
 	printf("  Boost expired: heating_stage1=%d, cooling_stage1=%d, hot_water=%d\n", output.heating_stage1, output.cooling_stage1, output.hot_water);
 
-	printf("DEBUG: Simulating boost cancellation\n");
-	// Simulate boost cancellation
+	// Test boost cancellation
 	thermostat_boost_activate(&state, "heating", now, 300);
 	input.temperature = 25.0f; // Well above heat setpoint - should not call for heat
 	input.now_seconds = now + 100;
@@ -2029,7 +2009,6 @@ static void test_23_boost_feature(void) {
 	assert(output.heating_stage1 == false);
 	printf("  Boost cancelled: heating_stage1=%d\n", output.heating_stage1);
 
-	printf("DEBUG: test_23_boost_feature() completing\n");
 	TEST_PASS(23, "Boost Feature - Heating, Cooling, Hot Water");
 }
 
@@ -2063,7 +2042,7 @@ static void test_24_boost_comprehensive(void) {
 	assert(output.heating_stage1 == true);
 	assert(output.heating_stage2 == false); // Stage 2 must not activate during boost
 	thermostat_boost_cancel(&state, "heating");
-	printf("    ✓ Stage 2 correctly disabled during boost\n");
+	printf("    [OK] Stage 2 correctly disabled during boost\n");
 
 	// Test 2: Reactivating boost after expiration
 	printf("  Test 2: Reactivating boost after expiration\n");
@@ -2079,7 +2058,7 @@ static void test_24_boost_comprehensive(void) {
 	assert(output.heating_stage1 == true);
 	assert(state.boost_active_heating == true);
 	thermostat_boost_cancel(&state, "heating");
-	printf("    ✓ Boost can be reactivated after expiration\n");
+	printf("    [OK] Boost can be reactivated after expiration\n");
 
 	// Test 3: Overlapping boost activations
 	printf("  Test 3: Overlapping boost activations\n");
@@ -2089,7 +2068,7 @@ static void test_24_boost_comprehensive(void) {
 	thermostat_boost_activate(&state, "heating", now + 50, 500);
 	assert(state.boost_end_time_heating == now + 50 + 500); // Should update to new end time
 	thermostat_boost_cancel(&state, "heating");
-	printf("    ✓ Overlapping activations update end time\n");
+	printf("    [OK] Overlapping activations update end time\n");
 
 	// Test 4: Invalid domain names
 	printf("  Test 4: Invalid domain names\n");
@@ -2352,9 +2331,9 @@ static void print_test_summary(void) {
 		printf("Success Rate: %.2f%%\n", (float)passed_tests / total_tests * 100.0f);
 
 		if (passed_tests == total_tests) {
-				printf("\n" COLOR_GREEN "✓ ALL TESTS PASSED!" COLOR_RESET "\n\n");
+				printf("\n" COLOR_GREEN "[OK] ALL TESTS PASSED!" COLOR_RESET "\n\n");
 		} else {
-				printf("\n" COLOR_RED "✗ SOME TESTS FAILED" COLOR_RESET "\n\n");
+				printf("\n" COLOR_RED "[FAIL] SOME TESTS FAILED" COLOR_RESET "\n\n");
 		}
 }
 

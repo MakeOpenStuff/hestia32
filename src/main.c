@@ -119,7 +119,6 @@ void app_main(void) {
         esp_restart();
     }
 
-    // PRIORITY 2: Calibration exists - check WiFi provisioning
     wifi_prov_init();
     bool is_provisioned = wifi_prov_is_provisioned();
 

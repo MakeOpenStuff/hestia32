@@ -76,20 +76,30 @@ typedef enum {
 // CONFIGURATION
 // ============================================================================
 
-typedef struct {
-		// Units and modes
-		TempUnit temp_unit;
-		ComfortMode comfort_mode;
-		HumidityMode humidity_mode;
 
-		// Domain enable flags (max 4 can be enabled)
-		bool heating_enabled;
-		bool heating_stage2_enabled;     // Requires heating_enabled
-		bool cooling_enabled;
-		bool cooling_stage2_enabled;     // Requires cooling_enabled
-		bool fan_enabled;
-		bool humidity_control_enabled;
-		bool hot_water_enabled;
+// Boost feature configuration (per domain)
+typedef struct {
+	uint32_t duration_sec;      // Last-set boost duration (seconds)
+} BoostConfig;
+
+typedef struct {
+	TempUnit temp_unit;
+	ComfortMode comfort_mode;
+	HumidityMode humidity_mode;
+
+	// Boost configuration for each domain
+	BoostConfig boost_heating;
+	BoostConfig boost_cooling;
+	BoostConfig boost_hot_water;
+
+	// Domain enable flags (max 4 can be enabled)
+	bool heating_enabled;
+	bool heating_stage2_enabled;     // Requires heating_enabled
+	bool cooling_enabled;
+	bool cooling_stage2_enabled;     // Requires cooling_enabled
+	bool fan_enabled;
+	bool humidity_control_enabled;
+	bool hot_water_enabled;
 
 	// Open window detection
 	bool open_window_detection_enabled;
@@ -111,12 +121,24 @@ typedef struct {
 		// Fan timing
 		uint32_t fan_pre_run_sec;   // Fan starts this many seconds before heating/cooling
 		uint32_t fan_post_run_sec;  // Fan continues this many seconds after heating/cooling stops
+	// ...existing fields...
+	// Boost state for each domain
+	bool boost_active_heating;
+	bool boost_active_cooling;
+	bool boost_active_hot_water;
+	uint32_t boost_end_time_heating;
+	uint32_t boost_end_time_cooling;
+	uint32_t boost_end_time_hot_water;
+	uint32_t boost_last_duration_heating;
+	uint32_t boost_last_duration_cooling;
+	uint32_t boost_last_duration_hot_water;
 
 		// Deadband thresholds (in configured unit)
 		float comfort_deadband;
 		float eco_deadband;
 } ThermostatConfig;
 
+// ...existing code...
 // ============================================================================
 // INPUT
 // ============================================================================
@@ -176,6 +198,17 @@ typedef struct {
 	float temperature_history[3];    // Last 3 temperature readings for trend detection
 	uint32_t temperature_history_times[3];  // Timestamps for temperature readings
 	uint8_t temperature_history_index;  // Current position in circular buffer
+
+	// Boost state for each domain
+	bool boost_active_heating;
+	bool boost_active_cooling;
+	bool boost_active_hot_water;
+	uint32_t boost_end_time_heating;
+	uint32_t boost_end_time_cooling;
+	uint32_t boost_end_time_hot_water;
+	uint32_t boost_last_duration_heating;
+	uint32_t boost_last_duration_cooling;
+	uint32_t boost_last_duration_hot_water;
 } ThermostatState;
 
 // ============================================================================
@@ -195,6 +228,17 @@ typedef struct {
 		bool dehumidifier;      // If humidity_mode == DEHUMIDIFY
 		bool hot_water;
 } ThermostatOutput;
+
+// API
+void thermostat_update(const ThermostatConfig* config,
+					  const ThermostatInput* input,
+					  ThermostatState* state,
+					  ThermostatOutput* output);
+
+// Boost control API
+void thermostat_boost_activate(ThermostatState* state, const char* domain, uint32_t now, uint32_t duration_sec);
+void thermostat_boost_cancel(ThermostatState* state, const char* domain);
+bool thermostat_boost_is_active(const ThermostatState* state, const char* domain, uint32_t now);
 
 // ============================================================================
 // API

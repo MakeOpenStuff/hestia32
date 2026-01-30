@@ -631,6 +631,63 @@ float thermostat_f_to_c(float fahrenheit);
 
 ---
 
+### 6.7 Boost Feature (Heating, Cooling, Hot Water)
+
+**Status:** Implemented and Tested
+
+**Description:**
+The Boost feature allows temporary override of normal thermostat logic for rapid activation of heating, cooling, or hot water. When activated, the selected domain runs at maximum output (stage 1 only) for a configurable duration, after which normal operation resumes automatically. Each domain maintains independent boost state with per-domain timers.
+
+**Implementation Details:**
+- **API Functions:**
+  - `thermostat_boost_activate(state, domain, now, duration_sec)` - Activate boost
+  - `thermostat_boost_cancel(state, domain)` - Cancel active boost
+  - `thermostat_boost_is_active(state, domain, now)` - Check boost status
+
+- **Boost Behavior:**
+  - Heating/Cooling: Forces stage 1 output ON; stage 2 always disabled during boost
+  - Hot Water: Forces output ON regardless of demand signal
+  - Duration: User-configurable per activation (in seconds)
+  - Expiration: Automatic when current time ≥ boost_end_time
+  - State tracking: boost_active flag, boost_end_time, boost_last_duration per domain
+
+**Safety Features:**
+1. **Sensor Failure Override:** Boost is disabled if sensors_valid = false
+2. **Mutual Exclusion:** If both heating and cooling boosts are active, only the most recently activated boost runs (or both disabled if equal end times)
+3. **Configuration Respect:** Boost won't activate if domain is disabled in config (heating_enabled, cooling_enabled, hot_water_enabled)
+4. **Open Window Detection:** Heating boost is cancelled if open window is detected
+5. **Normal Logic Resumption:** After boost expires or is cancelled, normal thermostat logic takes over immediately
+
+**Test Coverage (24/24 tests pass):**
+
+*Test 23 - Basic Functionality (5 scenarios):*
+1. Boost activation for heating, cooling, and hot water
+2. Override normal logic (forces output ON despite unfavorable conditions)
+3. Stage 2 disabled during boost
+4. Boost expiration after timeout
+5. Manual boost cancellation
+
+*Test 24 - Comprehensive Edge Cases (15 scenarios):*
+1. Stage 2 config enabled but stays off during boost
+2. Reactivating boost after expiration
+3. Overlapping boost activations (updates end time)
+4. Invalid domain names (graceful handling)
+5. Boost with duration=0 (immediate expiration)
+6. Sensor failure safety override
+7. Normal logic resumption after expiration
+8. Fan interaction during boost
+9. Multiple simultaneous boosts (non-conflicting domains)
+10. Mutual exclusion - heating vs cooling (latest wins)
+11. Mutual exclusion - equal end times (both disabled)
+12. Selective cancellation (cancel one, others remain active)
+13. Exact boundary expiration (at end_time, not after)
+14. Boost + open window detection (boost cancelled)
+15. Boost respects domain enabled flags
+
+**Dependencies:** Thermostat module (complete), UI integration (pending), NVS persistence (pending)
+
+---
+
 ## 7. User Interface
 
 ### 7.1 Provisioning Mode Interface

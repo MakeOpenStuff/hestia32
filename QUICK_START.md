@@ -19,14 +19,14 @@ hestia32/
 
 ## What's New
 
-### ✅ WiFi Provisioning Portal (Latest)
+### WiFi Provisioning Portal (Latest)
 - **No hardcoded WiFi credentials** - Configure via web interface
 - **Captive portal** - Access http://192.168.4.1 when connected to ESP32-Setup AP
 - **NVS storage** - Credentials saved permanently
 - **Extra settings** - Configure OTA server URL and device name
 - **Factory reset** - Can reset and reconfigure anytime
 
-### ✅ Previous Features
+### Previous Features
 - **WiFi Manager Module**: Complete WiFi connection handling
 - **OTA Manager Module**: Working HTTPS OTA implementation
 - **Configuration Header**: Centralized settings
@@ -87,14 +87,24 @@ pio run -t upload
 
 ## Key Features
 
-- ✅ **WiFi Provisioning Portal** - No hardcoded credentials!
-- ✅ **NVS Storage** - Settings persist across reboots
-- ✅ **Clean, modular code** structure
-- ✅ Proper error handling
-- ✅ WiFi auto-reconnect
-- ✅ OTA rollback protection
-- ✅ No watchdog timer issues
-- ✅ Ready for production (with security additions)
+- [x] **WiFi Provisioning Portal** - No hardcoded credentials!
+- [x] **NVS Storage** - Settings persist across reboots
+- [x] **Clean, modular code** structure
+- [x] Proper error handling
+- [x] WiFi auto-reconnect
+- [x] OTA rollback protection
+- [x] No watchdog timer issues
+- [x] Ready for production (with security additions)
+- [x] **Boost Feature** - Temporarily override heating, cooling, or hot water for a user-defined countdown. Only stage 1 is activated during boost. Each domain has its own adjustable timer.
+## Using the Boost Feature
+
+To activate Boost for heating, cooling, or hot water:
+
+1. Use the UI or physical controls to select the domain (heating, cooling, hot water).
+2. Set the desired countdown duration. The last-used duration is remembered per domain and can be adjusted.
+3. During Boost, only stage 1 is activated for heating/cooling. After the countdown, normal operation resumes.
+
+Refer to the README.md for more details.
 
 ## Configuration Structure
 
@@ -116,7 +126,7 @@ typedef struct {
 
 ## Build Status
 
-**Last Build**: ✅ Success
+**Last Build**: Success
 **RAM Usage**: 9.6% (31,504 / 327,680 bytes)
 **Flash Usage**: 72.5% (759,917 / 1,048,576 bytes)
 

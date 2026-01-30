@@ -13,7 +13,11 @@ ESP32 firmware with WiFi provisioning, OTA updates, ILI9488 display, resistive t
 - BT and OTA (Over-The-Air) firmware updates
 - Factory reset via BOOT button
 - NVS storage for WiFi credentials and configuration
-- Advanced thermostat control logic with multi-stage heating/cooling
+- Advanced thermostat control logic with multi-stage heating/cooling and per-domain Boost feature (heating, cooling, hot water)
+## Boost Feature
+
+The Boost feature allows users to temporarily override normal thermostat logic for heating, cooling, or hot water. When activated, the selected domain runs at maximum output for a user-defined period (countdown), after which normal operation resumes. Only stage 1 is activated for heating/cooling during boost. Each domain has its own independent boost timer and last-used duration, which is user-adjustable.
+
 - Configurable node name and OTA server URL
 - LVGL-based graphical interface
 - Automatic touch calibration wizard on first boot

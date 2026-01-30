@@ -524,21 +524,128 @@ void thermostat_state_init(ThermostatState* state, uint32_t now_seconds) {
 		state->last_state_change_time = now_seconds;
 }
 
+
+// --- BOOST LOGIC ---
+static bool boost_is_active(const ThermostatState* state, const char* domain, uint32_t now) {
+	if (strcmp(domain, "heating") == 0) {
+		return state->boost_active_heating && now < state->boost_end_time_heating;
+	} else if (strcmp(domain, "cooling") == 0) {
+		return state->boost_active_cooling && now < state->boost_end_time_cooling;
+	} else if (strcmp(domain, "hot_water") == 0) {
+		return state->boost_active_hot_water && now < state->boost_end_time_hot_water;
+	}
+	return false;
+}
+
+void thermostat_boost_activate(ThermostatState* state, const char* domain, uint32_t now, uint32_t duration_sec) {
+	if (strcmp(domain, "heating") == 0) {
+		state->boost_active_heating = true;
+		state->boost_end_time_heating = now + duration_sec;
+		state->boost_last_duration_heating = duration_sec;
+	} else if (strcmp(domain, "cooling") == 0) {
+		state->boost_active_cooling = true;
+		state->boost_end_time_cooling = now + duration_sec;
+		state->boost_last_duration_cooling = duration_sec;
+	} else if (strcmp(domain, "hot_water") == 0) {
+		state->boost_active_hot_water = true;
+		state->boost_end_time_hot_water = now + duration_sec;
+		state->boost_last_duration_hot_water = duration_sec;
+	}
+}
+
+void thermostat_boost_cancel(ThermostatState* state, const char* domain) {
+	if (strcmp(domain, "heating") == 0) {
+		state->boost_active_heating = false;
+		state->boost_end_time_heating = 0;
+	} else if (strcmp(domain, "cooling") == 0) {
+		state->boost_active_cooling = false;
+		state->boost_end_time_cooling = 0;
+	} else if (strcmp(domain, "hot_water") == 0) {
+		state->boost_active_hot_water = false;
+		state->boost_end_time_hot_water = 0;
+	}
+}
+
+bool thermostat_boost_is_active(const ThermostatState* state, const char* domain, uint32_t now) {
+	return boost_is_active(state, domain, now);
+}
+
 void thermostat_update(
 		const ThermostatConfig* config,
 		const ThermostatInput* input,
 		ThermostatState* state,
 		ThermostatOutput* output
 ) {
-		// Clear output
-		memset(output, 0, sizeof(ThermostatOutput));
+	// Clear output
+	memset(output, 0, sizeof(ThermostatOutput));
 
-		// Update each domain independently
+	uint32_t now = input->now_seconds;
+
+	// --- BOOST OVERRIDE LOGIC ---
+	bool boost_heat = boost_is_active(state, "heating", now);
+	bool boost_cool = boost_is_active(state, "cooling", now);
+	bool boost_water = boost_is_active(state, "hot_water", now);
+
+	// Expire boost if needed
+	if (state->boost_active_heating && now >= state->boost_end_time_heating) state->boost_active_heating = false;
+	if (state->boost_active_cooling && now >= state->boost_end_time_cooling) state->boost_active_cooling = false;
+	if (state->boost_active_hot_water && now >= state->boost_end_time_hot_water) state->boost_active_hot_water = false;
+
+	// Safety shutdown overrides boost for thermal domains
+	if (!input->sensors_valid) {
+		boost_heat = false;
+		boost_cool = false;
+	}
+
+	// Mutual exclusion: heating and cooling boosts cannot both be active
+	if (boost_heat && boost_cool) {
+		// If both are active, keep whichever was activated more recently
+		// (higher end_time means more recent activation)
+		if (state->boost_end_time_heating > state->boost_end_time_cooling) {
+			boost_cool = false;
+		} else if (state->boost_end_time_cooling > state->boost_end_time_heating) {
+			boost_heat = false;
+		} else {
+			// Equal end times - disable both (shouldn't happen in practice)
+			boost_heat = false;
+			boost_cool = false;
+		}
+	}
+
+	// Respect domain enabled flags
+	if (!config->heating_enabled) boost_heat = false;
+	if (!config->cooling_enabled) boost_cool = false;
+	if (!config->hot_water_enabled) boost_water = false;
+
+	// Open window detection overrides heating boost
+	if (state->open_window_detected && boost_heat) {
+		boost_heat = false;
+	}
+
+	// If boost is active, override normal logic for that domain
+	if (boost_heat) {
+		output->heating_stage1 = true;
+		output->heating_stage2 = false;
+		// All other outputs handled by normal logic
+	}
+	if (boost_cool) {
+		output->cooling_stage1 = true;
+		output->cooling_stage2 = false;
+	}
+	if (boost_water) {
+		output->hot_water = true;
+	}
+
+	// Update each domain independently, but skip normal logic for boosted domains
 	update_open_window_detection(config, input, state);
+	if (!boost_heat && !boost_cool) {
 		update_thermal_domain(config, input, state, output);
-		update_fan_domain(config, input, state, output, output);
-		update_humidity_domain(config, input, state, output);
+	}
+	update_fan_domain(config, input, state, output, output);
+	update_humidity_domain(config, input, state, output);
+	if (!boost_water) {
 		update_hot_water_domain(config, input, state, output);
+	}
 }
 
 float thermostat_c_to_f(float celsius) {

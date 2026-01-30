@@ -25,6 +25,7 @@
 //   - Sensor failure safety shutdown
 //   - Temperature unit conversion (Celsius/Fahrenheit)
 //   - Real-world simulation scenario
+//   - Boost feature (heating, cooling, hot water)
 //
 // OUTPUT:
 //   - Color-coded test results (green=pass, red=fail)
@@ -43,6 +44,7 @@
 #include <assert.h>
 #include <string.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include "../src/thermostat.h"
 
 // ANSI color codes
@@ -56,7 +58,7 @@
 
 //TODO: Tests need verification they cover correctly all cases
 // Test result tracking
-#define MAX_TESTS 22
+#define MAX_TESTS 24
 #define MAX_NAME_LEN 64
 
 static struct {
@@ -1929,6 +1931,353 @@ static void test_22_open_window_no_false_positives(void) {
 	TEST_PASS(22, "Open Window Detection - No False Positives");
 }
 
+// ============================================================================
+// TEST 23: Boost Feature - Heating, Cooling, Hot Water
+// ============================================================================
+
+static void test_23_boost_feature(void) {
+	printf("DEBUG: test_23_boost_feature() started\n");
+	fflush(stdout);
+	TEST_START(23, "Boost Feature - Heating, Cooling, Hot Water");
+	fflush(stdout);
+
+	printf("DEBUG: Initializing config\n");
+	ThermostatConfig config;
+	thermostat_config_init(&config);
+	config.heating_enabled = true;
+	config.cooling_enabled = true;
+	config.hot_water_enabled = true;
+	config.comfort_deadband = 0.5f;
+	config.heat_setpoint = 20.0f;
+	config.cool_setpoint = 24.0f;
+
+	printf("DEBUG: Initializing state\n");
+	ThermostatState state;
+	ThermostatInput input = {0};
+	ThermostatOutput output;
+	thermostat_state_init(&state, 0);
+	input.sensors_valid = true;
+
+	printf("DEBUG: Simulating boost activation for heating\n");
+	// Simulate boost activation for heating
+	uint32_t now = 1000;
+	thermostat_boost_activate(&state, "heating", now, 300); // 5 min boost
+	input.temperature = 25.0f; // Well above heat setpoint
+	input.now_seconds = now;
+	printf("DEBUG: Calling thermostat_update for heating\n");
+	thermostat_update(&config, &input, &state, &output);
+	printf("DEBUG: Returned from thermostat_update\n");
+	assert(output.heating_stage1 == true);
+	assert(output.heating_stage2 == false);
+	printf("  Heating boost active: heating_stage1=%d, heating_stage2=%d\n", output.heating_stage1, output.heating_stage2);
+
+	printf("DEBUG: Simulating boost activation for cooling\n");
+	// Cancel heating boost before testing cooling (to avoid mutual exclusion)
+	thermostat_boost_cancel(&state, "heating");
+	// Simulate boost activation for cooling
+	thermostat_boost_activate(&state, "cooling", now, 300);
+	input.temperature = 15.0f; // Well below cool setpoint
+	input.now_seconds = now;
+	thermostat_update(&config, &input, &state, &output);
+	assert(output.cooling_stage1 == true);
+	assert(output.cooling_stage2 == false);
+	printf("  Cooling boost active: cooling_stage1=%d, cooling_stage2=%d\n", output.cooling_stage1, output.cooling_stage2);
+
+	printf("DEBUG: Simulating boost activation for hot water\n");
+	// Cancel cooling boost before testing hot water
+	thermostat_boost_cancel(&state, "cooling");
+	// Simulate boost activation for hot water
+	thermostat_boost_activate(&state, "hot_water", now, 300);
+	input.hot_water_demand = false;
+	input.now_seconds = now;
+	thermostat_update(&config, &input, &state, &output);
+	assert(output.hot_water == true);
+	printf("  Hot water boost active: hot_water=%d\n", output.hot_water);
+
+	printf("DEBUG: Simulating boost expiration\n");
+	// Reactivate all boosts for expiration test (at different times to avoid mutual exclusion)
+	thermostat_boost_activate(&state, "heating", now, 300);
+	thermostat_boost_activate(&state, "cooling", now + 1, 299); // Different time but same end
+	thermostat_boost_activate(&state, "hot_water", now, 300);
+	// Set neutral temperature so normal logic doesn't activate after expiration
+	input.temperature = 22.0f; // Between heat and cool setpoints
+	input.hot_water_demand = false;
+	// Simulate boost expiration
+	input.now_seconds = now + 301;
+	printf("DEBUG: now + 301 = %u\n", input.now_seconds);
+	printf("DEBUG: boost_end_time_heating=%u, boost_end_time_cooling=%u, boost_end_time_hot_water=%u\n",
+	       state.boost_end_time_heating, state.boost_end_time_cooling, state.boost_end_time_hot_water);
+	thermostat_update(&config, &input, &state, &output);
+	printf("DEBUG: After update - heating_stage1=%d, cooling_stage1=%d, hot_water=%d\n",
+	       output.heating_stage1, output.cooling_stage1, output.hot_water);
+	printf("DEBUG: boost_active_heating=%d, boost_active_cooling=%d, boost_active_hot_water=%d\n",
+	       state.boost_active_heating, state.boost_active_cooling, state.boost_active_hot_water);
+	assert(output.heating_stage1 == false);
+	assert(output.cooling_stage1 == false);
+	assert(output.hot_water == false);
+	printf("  Boost expired: heating_stage1=%d, cooling_stage1=%d, hot_water=%d\n", output.heating_stage1, output.cooling_stage1, output.hot_water);
+
+	printf("DEBUG: Simulating boost cancellation\n");
+	// Simulate boost cancellation
+	thermostat_boost_activate(&state, "heating", now, 300);
+	input.temperature = 25.0f; // Well above heat setpoint - should not call for heat
+	input.now_seconds = now + 100;
+	thermostat_update(&config, &input, &state, &output);
+	assert(output.heating_stage1 == true);
+	thermostat_boost_cancel(&state, "heating");
+	thermostat_update(&config, &input, &state, &output);
+	assert(output.heating_stage1 == false);
+	printf("  Boost cancelled: heating_stage1=%d\n", output.heating_stage1);
+
+	printf("DEBUG: test_23_boost_feature() completing\n");
+	TEST_PASS(23, "Boost Feature - Heating, Cooling, Hot Water");
+}
+
+static void test_24_boost_comprehensive(void) {
+	TEST_START(24, "Boost Feature - Comprehensive Edge Cases");
+
+	ThermostatConfig config;
+	thermostat_config_init(&config);
+	config.heating_enabled = true;
+	config.heating_stage2_enabled = true;
+	config.cooling_enabled = true;
+	config.hot_water_enabled = true;
+	config.fan_enabled = true;
+	config.comfort_deadband = 0.5f;
+	config.heat_setpoint = 20.0f;
+	config.cool_setpoint = 24.0f;
+
+	ThermostatState state;
+	ThermostatInput input = {0};
+	ThermostatOutput output;
+	thermostat_state_init(&state, 0);
+	input.sensors_valid = true;
+	uint32_t now = 1000;
+
+	// Test 1: Boost with stage 2 enabled - stage 2 should stay off during boost
+	printf("  Test 1: Boost with stage 2 config enabled\n");
+	thermostat_boost_activate(&state, "heating", now, 300);
+	input.temperature = 15.0f; // Well below setpoint
+	input.now_seconds = now;
+	thermostat_update(&config, &input, &state, &output);
+	assert(output.heating_stage1 == true);
+	assert(output.heating_stage2 == false); // Stage 2 must not activate during boost
+	thermostat_boost_cancel(&state, "heating");
+	printf("    ✓ Stage 2 correctly disabled during boost\n");
+
+	// Test 2: Reactivating boost after expiration
+	printf("  Test 2: Reactivating boost after expiration\n");
+	thermostat_boost_activate(&state, "heating", now, 100);
+	input.now_seconds = now + 101; // After expiration
+	thermostat_update(&config, &input, &state, &output);
+	assert(state.boost_active_heating == false);
+	// Reactivate
+	thermostat_boost_activate(&state, "heating", now + 101, 200);
+	input.now_seconds = now + 101;
+	input.temperature = 25.0f;
+	thermostat_update(&config, &input, &state, &output);
+	assert(output.heating_stage1 == true);
+	assert(state.boost_active_heating == true);
+	thermostat_boost_cancel(&state, "heating");
+	printf("    ✓ Boost can be reactivated after expiration\n");
+
+	// Test 3: Overlapping boost activations
+	printf("  Test 3: Overlapping boost activations\n");
+	thermostat_boost_activate(&state, "heating", now, 300);
+	assert(state.boost_end_time_heating == now + 300);
+	// Activate again with different duration
+	thermostat_boost_activate(&state, "heating", now + 50, 500);
+	assert(state.boost_end_time_heating == now + 50 + 500); // Should update to new end time
+	thermostat_boost_cancel(&state, "heating");
+	printf("    ✓ Overlapping activations update end time\n");
+
+	// Test 4: Invalid domain names
+	printf("  Test 4: Invalid domain names\n");
+	thermostat_boost_activate(&state, "invalid_domain", now, 300);
+	// Should not crash - no assertion needed, just verify it doesn't break
+	thermostat_boost_cancel(&state, "unknown_domain");
+	bool is_active = thermostat_boost_is_active(&state, "fake_domain", now);
+	assert(is_active == false); // Should return false for invalid domain
+	printf("    ✓ Invalid domains handled gracefully\n");
+
+	// Test 5: Boost with duration=0
+	printf("  Test 5: Boost with duration=0\n");
+	thermostat_boost_activate(&state, "heating", now, 0);
+	input.now_seconds = now;
+	input.temperature = 25.0f;
+	thermostat_update(&config, &input, &state, &output);
+	// With duration=0, boost should be active but expire immediately on next update
+	input.now_seconds = now + 1;
+	thermostat_update(&config, &input, &state, &output);
+	assert(state.boost_active_heating == false);
+	assert(output.heating_stage1 == false); // Temp above setpoint, no heating
+	printf("    ✓ Duration=0 expires immediately\n");
+
+	// Test 6: Boost + sensor failure
+	printf("  Test 6: Boost + sensor failure safety\n");
+	thermostat_boost_activate(&state, "heating", now, 300);
+	input.now_seconds = now;
+	input.temperature = 25.0f;
+	input.sensors_valid = false; // Trigger safety shutdown
+	thermostat_update(&config, &input, &state, &output);
+	assert(output.heating_stage1 == false); // Safety shutdown overrides boost
+	assert(output.cooling_stage1 == false);
+	assert(output.fan == false);
+	input.sensors_valid = true; // Restore
+	thermostat_boost_cancel(&state, "heating");
+	printf("    ✓ Sensor failure overrides boost\n");
+
+	// Test 7: Normal logic resumption after boost expires
+	printf("  Test 7: Normal logic resumes after expiration\n");
+	thermostat_state_init(&state, 0); // Reset state to clear thermal history
+	config.hysteresis_period_sec = 0; // Disable hysteresis for this test
+	state.last_state_change_time = 0; // Clear state change history
+	thermostat_boost_activate(&state, "heating", now, 200);
+	input.now_seconds = now + 201; // After expiration
+	input.temperature = 18.0f; // Below setpoint - heating should turn on naturally
+	thermostat_update(&config, &input, &state, &output);
+	assert(state.boost_active_heating == false);
+	// After boost expires with hysteresis=0 and state change time cleared, should activate
+	// However, there's still fan pre-run delay, so heating might not be immediate
+	// Let's advance time past pre-run
+	input.now_seconds = now + 201 + 35; // Add fan pre-run time
+	thermostat_update(&config, &input, &state, &output);
+	assert(output.heating_stage1 == true); // Normal logic: temp < setpoint
+	printf("    ✓ Normal logic resumes correctly\n");
+
+	// Test 8: Fan interaction during boost
+	printf("  Test 8: Fan runs during boost\n");
+	thermostat_state_init(&state, 0); // Reset state
+	thermostat_boost_activate(&state, "heating", now, 300);
+	input.now_seconds = now;
+	input.temperature = 25.0f;
+	thermostat_update(&config, &input, &state, &output);
+	// Fan should start pre-run
+	input.now_seconds = now + 35; // After pre-run
+	thermostat_update(&config, &input, &state, &output);
+	assert(output.fan == true); // Fan should run with boost
+	assert(output.heating_stage1 == true);
+	thermostat_boost_cancel(&state, "heating");
+	printf("    ✓ Fan properly runs during boost\n");
+
+	// Test 9: Multiple simultaneous boosts
+	printf("  Test 9: Multiple simultaneous boosts\n");
+	thermostat_state_init(&state, 0);
+	thermostat_boost_activate(&state, "heating", now, 300);
+	thermostat_boost_activate(&state, "hot_water", now, 300);
+	input.now_seconds = now;
+	input.temperature = 25.0f;
+	input.hot_water_demand = false;
+	thermostat_update(&config, &input, &state, &output);
+	assert(output.heating_stage1 == true);
+	assert(output.hot_water == true);
+	assert(output.cooling_stage1 == false); // Heating and cooling should be mutually exclusive
+	printf("    ✓ Multiple boosts work simultaneously\n");
+
+	// Test 10: Mutual exclusion - heating + cooling boosts
+	printf("  Test 10: Mutual exclusion - heating + cooling conflict\n");
+	thermostat_state_init(&state, 0);
+	// Activate both heating and cooling boosts
+	thermostat_boost_activate(&state, "heating", now, 300);
+	thermostat_boost_activate(&state, "cooling", now + 10, 300); // Cooling activated later
+	input.now_seconds = now + 10;
+	input.temperature = 22.0f; // Neutral temperature
+	thermostat_update(&config, &input, &state, &output);
+	// Most recent boost (cooling) should win
+	assert(output.cooling_stage1 == true);
+	assert(output.heating_stage1 == false);
+	printf("    ✓ Mutual exclusion enforced - latest boost wins\n");
+
+	// Test 11: Mutual exclusion - equal end times
+	printf("  Test 11: Mutual exclusion - equal end times\n");
+	thermostat_state_init(&state, 0);
+	thermostat_boost_activate(&state, "heating", now, 300);
+	thermostat_boost_activate(&state, "cooling", now, 300); // Same time, same duration
+	input.now_seconds = now;
+	input.temperature = 22.0f;
+	thermostat_update(&config, &input, &state, &output);
+	// Both have equal end times - implementation should disable both
+	assert(output.cooling_stage1 == false);
+	assert(output.heating_stage1 == false);
+	printf("    ✓ Equal end times handled correctly\n");
+
+	// Test 12: Selective cancellation
+	printf("  Test 12: Selective cancellation of one boost\n");
+	thermostat_state_init(&state, 0);
+	thermostat_boost_activate(&state, "heating", now, 300);
+	thermostat_boost_activate(&state, "hot_water", now, 300);
+	input.now_seconds = now;
+	input.temperature = 25.0f;
+	input.hot_water_demand = false;
+	thermostat_update(&config, &input, &state, &output);
+	assert(output.heating_stage1 == true);
+	assert(output.hot_water == true);
+	// Cancel only heating
+	thermostat_boost_cancel(&state, "heating");
+	thermostat_update(&config, &input, &state, &output);
+	assert(output.heating_stage1 == false); // Cancelled
+	assert(output.hot_water == true); // Still active
+	printf("    ✓ Selective cancellation works correctly\n");
+
+	// Test 12: Exact expiration boundary
+	printf("  Test 12: Expiration at exact boundary\n");
+	thermostat_state_init(&state, 0);
+	thermostat_boost_activate(&state, "heating", now, 300);
+	input.now_seconds = now + 300; // Exactly at end time
+	input.temperature = 25.0f;
+	thermostat_update(&config, &input, &state, &output);
+	// At exactly end_time, boost should still be considered expired (>= check)
+	assert(state.boost_active_heating == false);
+	assert(output.heating_stage1 == false);
+	printf("    ✓ Expiration at exact boundary works\n");
+
+	// Test 13: Verify boost state variables
+	printf("  Test 13: Boost state variables\n");
+	thermostat_state_init(&state, 0);
+	assert(state.boost_active_heating == false);
+	assert(state.boost_end_time_heating == 0);
+	thermostat_boost_activate(&state, "heating", now, 500);
+	assert(state.boost_active_heating == true);
+	assert(state.boost_end_time_heating == now + 500);
+	assert(state.boost_last_duration_heating == 500);
+	bool active = thermostat_boost_is_active(&state, "heating", now + 100);
+	assert(active == true);
+	active = thermostat_boost_is_active(&state, "heating", now + 501);
+	assert(active == false);
+	printf("    ✓ Boost state variables correct\n");
+
+	// Test 14: Boost + open window detection
+	printf("  Test 14: Boost + open window detection\n");
+	thermostat_state_init(&state, 0);
+	config.open_window_detection_enabled = true;
+	config.open_window_temp_drop_threshold = 2.0f;
+	config.open_window_time_window_sec = 180;
+	// Simulate open window detection
+	state.open_window_detected = true;
+	thermostat_boost_activate(&state, "heating", now, 300);
+	input.now_seconds = now;
+	input.temperature = 18.0f; // Below setpoint
+	thermostat_update(&config, &input, &state, &output);
+	// Open window should override boost
+	assert(output.heating_stage1 == false);
+	printf("    ✓ Open window overrides boost\n");
+
+	// Test 15: Boost with domain disabled in config
+	printf("  Test 15: Boost with domain disabled in config\n");
+	thermostat_state_init(&state, 0);
+	state.open_window_detected = false;
+	config.heating_enabled = false; // Disable heating
+	thermostat_boost_activate(&state, "heating", now, 300);
+	input.now_seconds = now;
+	input.temperature = 18.0f;
+	thermostat_update(&config, &input, &state, &output);
+	// Should not activate - domain is disabled
+	assert(output.heating_stage1 == false);
+	printf("    ✓ Boost respects domain enabled flags\n");
+
+	TEST_PASS(24, "Boost Feature - Comprehensive Edge Cases");
+}
+
 
 // ============================================================================
 // SIMULATION SCENARIO
@@ -2036,10 +2385,12 @@ int main(void) {
 		test_16_eco_deadband_hvac();
 		test_17_heat_stage2_hvac();
 		test_18_cool_stage2_hvac();
-	test_19_mutual_exclusion_hvac();
+		test_19_mutual_exclusion_hvac();
 		test_20_sensor_failure_hvac();
-	test_21_open_window_detection();
-	test_22_open_window_no_false_positives();
+		test_21_open_window_detection();
+		test_22_open_window_no_false_positives();
+		test_23_boost_feature();
+		test_24_boost_comprehensive();
 
 		simulate_scenario();
 		print_test_summary();

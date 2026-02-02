@@ -45,7 +45,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include "../src/thermostat.h"
+#include "../src/core/thermostat.h"
 
 // ANSI color codes
 #define COLOR_RESET   "\033[0m"

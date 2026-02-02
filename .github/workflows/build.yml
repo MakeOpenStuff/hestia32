@@ -1,0 +1,204 @@
+name: Build Hestia32 Firmware
+
+on:
+  push:
+    branches:
+      - '**'  # Build on all branches
+  pull_request:
+    branches:
+      - '**'  # Build on all PRs
+  release:
+    types: [created]
+
+env:
+  IDF_VERSION: v5.5.2
+  IDF_TARGET: esp32c5
+
+jobs:
+  build:
+    name: Build ${{ matrix.protocol }} Protocol
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        protocol:
+          - mqtt
+          - zigbee
+          - matter
+        include:
+          - protocol: mqtt
+            config: sdkconfig.mqtt
+            status: "Fully Implemented"
+          - protocol: zigbee
+            config: sdkconfig.zigbee
+            status: "Stub Only"
+          - protocol: matter
+            config: sdkconfig.matter
+            status: "Stub Only"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install ESP-IDF prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git wget flex bison gperf python3 python3-pip python3-venv \
+            cmake ninja-build ccache libffi-dev libssl-dev dfu-util libusb-1.0-0
+
+      - name: Set up ESP-IDF
+        run: |
+          mkdir -p ~/esp
+          cd ~/esp
+          git clone --recursive --depth 1 --branch ${{ env.IDF_VERSION }} \
+            https://github.com/espressif/esp-idf.git esp-idf
+          cd esp-idf
+          ./install.sh ${{ env.IDF_TARGET }}
+
+      - name: Build firmware (${{ matrix.protocol }})
+        run: |
+          . ~/esp/esp-idf/export.sh
+          idf.py -D SDKCONFIG_DEFAULTS=${{ matrix.config }} set-target ${{ env.IDF_TARGET }}
+          idf.py build
+
+      - name: Check binary size
+        run: |
+          . ~/esp/esp-idf/export.sh
+          idf.py size
+
+      - name: Generate build info
+        run: |
+          echo "Protocol: ${{ matrix.protocol }}" > build/build_info.txt
+          echo "Status: ${{ matrix.status }}" >> build/build_info.txt
+          echo "Target: ${{ env.IDF_TARGET }}" >> build/build_info.txt
+          echo "IDF Version: ${{ env.IDF_VERSION }}" >> build/build_info.txt
+          echo "Commit: ${{ github.sha }}" >> build/build_info.txt
+          echo "Branch: ${{ github.ref_name }}" >> build/build_info.txt
+          echo "Build Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> build/build_info.txt
+          if [ -f build/hestia32.bin ]; then
+            echo "Binary Size: $(stat -c%s build/hestia32.bin) bytes" >> build/build_info.txt
+          fi
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hestia32-${{ matrix.protocol }}-${{ github.sha }}
+          path: |
+            build/hestia32.bin
+            build/bootloader/bootloader.bin
+            build/partition_table/partition-table.bin
+            build/ota_data_initial.bin
+            build/flash_args
+            build/build_info.txt
+          retention-days: 90
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc make
+
+      - name: Run thermostat tests
+        run: |
+          make test
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ github.sha }}
+          path: |
+            test_thermostat
+            test_output.log
+          retention-days: 90
+
+  release:
+    name: Create Release Assets
+    runs-on: ubuntu-latest
+    needs: [build, test]
+    if: github.event_name == 'release'
+
+    steps:
+      - name: Download MQTT artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: hestia32-mqtt-${{ github.sha }}
+          path: mqtt-firmware
+
+      - name: Download Zigbee artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: hestia32-zigbee-${{ github.sha }}
+          path: zigbee-firmware
+
+      - name: Download Matter artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: hestia32-matter-${{ github.sha }}
+          path: matter-firmware
+
+      - name: Create release packages
+        run: |
+          # Package MQTT firmware
+          cd mqtt-firmware
+          zip ../hestia32-mqtt-${{ github.ref_name }}.zip *
+          cd ..
+
+          # Package Zigbee firmware (stub)
+          cd zigbee-firmware
+          zip ../hestia32-zigbee-${{ github.ref_name }}.zip *
+          cd ..
+
+          # Package Matter firmware (stub)
+          cd matter-firmware
+          zip ../hestia32-matter-${{ github.ref_name }}.zip *
+          cd ..
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            hestia32-mqtt-${{ github.ref_name }}.zip
+            hestia32-zigbee-${{ github.ref_name }}.zip
+            hestia32-matter-${{ github.ref_name }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-summary:
+    name: Build Summary
+    runs-on: ubuntu-latest
+    needs: [build, test]
+    if: always()
+
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## Hestia32 Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Protocol | Status | Notes |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| MQTT | ${{ needs.build.result }} | Fully Implemented |" >> $GITHUB_STEP_SUMMARY
+          echo "| Zigbee | ${{ needs.build.result }} | Stub Only |" >> $GITHUB_STEP_SUMMARY
+          echo "| Matter | ${{ needs.build.result }} | Stub Only |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Test Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Tests: ${{ needs.test.result }}" >> $GITHUB_STEP_SUMMARY

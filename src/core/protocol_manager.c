@@ -124,6 +124,32 @@ bool protocol_manager_is_connected(void) {
     return active_protocol->is_connected();
 }
 
+bool protocol_manager_is_provisioned(void) {
+    if (active_protocol == NULL) {
+        return false;
+    }
+
+    if (active_protocol->is_provisioned == NULL) {
+        return false;
+    }
+
+    return active_protocol->is_provisioned();
+}
+
+esp_err_t protocol_manager_start_provisioning(void) {
+    if (active_protocol == NULL) {
+        ESP_LOGE(TAG, "Protocol manager not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (active_protocol->start_provisioning == NULL) {
+        ESP_LOGE(TAG, "Protocol does not support provisioning");
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+
+    return active_protocol->start_provisioning();
+}
+
 const char* protocol_manager_get_name(void) {
     if (active_protocol == NULL || active_protocol->get_name == NULL) {
         return "Unknown";

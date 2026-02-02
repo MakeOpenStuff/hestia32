@@ -64,6 +64,20 @@ const protocol_interface_t* protocol_manager_get_interface(void);
 bool protocol_manager_is_connected(void);
 
 /**
+ * @brief Check if device is provisioned/paired
+ *
+ * @return true if provisioned, false otherwise
+ */
+bool protocol_manager_is_provisioned(void);
+
+/**
+ * @brief Start provisioning/pairing process
+ *
+ * @return ESP_OK on success, error code otherwise
+ */
+esp_err_t protocol_manager_start_provisioning(void);
+
+/**
  * @brief Get active protocol name
  *
  * @return Protocol name string (e.g., "MQTT", "Zigbee", "Matter")

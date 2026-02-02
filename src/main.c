@@ -9,9 +9,7 @@
 
 #include "core/core_config.h"
 #include "protocols/mqtt/mqtt_config.h"
-#include "protocols/mqtt/wifi_manager.h"
-#include "protocols/mqtt/wifi_provisioning.h"
-#include "protocols/mqtt/ota_manager.h"
+#include "core/protocol_manager.h"
 #include "core/display_manager.h"
 #include "lvgl.h"
 
@@ -120,8 +118,14 @@ void app_main(void) {
         esp_restart();
     }
 
-    wifi_prov_init();
-    bool is_provisioned = wifi_prov_is_provisioned();
+    // Initialize protocol manager
+    ret = protocol_manager_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Protocol manager initialization failed");
+        return;
+    }
+
+    bool is_provisioned = protocol_manager_is_provisioned();
 
     if (!is_provisioned) {
         // Start WiFi AP FIRST
@@ -130,8 +134,12 @@ void app_main(void) {
         ESP_LOGI(TAG, "Password: %s", PROV_AP_PASSWORD);
         ESP_LOGI(TAG, "Then open http://192.168.4.1 in your browser");
 
-        wifi_prov_start_ap();
-        ESP_LOGI(TAG, "Provisioning AP started");
+        ret = protocol_manager_start_provisioning();
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to start provisioning");
+            return;
+        }
+        ESP_LOGI(TAG, "Provisioning started");
 
         // Wait for DHCP to initialize
         vTaskDelay(pdMS_TO_TICKS(2000));
@@ -156,27 +164,13 @@ void app_main(void) {
         ESP_LOGE(TAG, "Display initialization failed");
     }
 
-    // Connect to WiFi (device is provisioned)
-    wifi_config_data_t wifi_config;
-    ret = wifi_prov_get_config(&wifi_config);
+    // Device is provisioned and calibrated - start protocol
+    ESP_LOGI(TAG, "Starting protocol connection...");
+    ret = protocol_manager_start();
     if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "Device provisioned. Node name: %s",
-                 wifi_config.node_name[0] ? wifi_config.node_name : "Unknown");
-
-        // Initialize and connect to WiFi
-        ESP_LOGI(TAG, "Connecting to WiFi: %s", wifi_config.ssid);
-        ret = wifi_init();
-        if (ret == ESP_OK) {
-            wifi_connect(wifi_config.ssid, wifi_config.password, WIFI_MAX_RETRY);
-        }
+        ESP_LOGI(TAG, "Protocol started successfully");
     } else {
-        ESP_LOGE(TAG, "Failed to get WiFi config");
-    }
-
-    // Initialize OTA manager (checks boot partition, marks as valid if needed)
-    ret = ota_init();
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "OTA initialization failed");
+        ESP_LOGE(TAG, "Failed to start protocol");
     }
 
     // Main task can now suspend - LVGL runs in its own task

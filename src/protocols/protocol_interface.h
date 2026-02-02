@@ -106,6 +106,20 @@ typedef esp_err_t (*protocol_report_boost_state_fn)(const char* domain, uint32_t
 typedef bool (*protocol_is_connected_fn)(void);
 
 /**
+ * @brief Check if device is provisioned/paired
+ *
+ * @return true if device is provisioned, false otherwise
+ */
+typedef bool (*protocol_is_provisioned_fn)(void);
+
+/**
+ * @brief Start provisioning/pairing process
+ *
+ * @return ESP_OK on success, error code otherwise
+ */
+typedef esp_err_t (*protocol_start_provisioning_fn)(void);
+
+/**
  * @brief Get protocol name
  *
  * @return Protocol name string (e.g., "MQTT", "Zigbee", "Matter")
@@ -128,6 +142,8 @@ typedef struct {
     protocol_report_relay_state_fn report_relay_state;
     protocol_report_boost_state_fn report_boost_state;
     protocol_is_connected_fn is_connected;
+    protocol_is_provisioned_fn is_provisioned;
+    protocol_start_provisioning_fn start_provisioning;
     protocol_get_name_fn get_name;
 } protocol_interface_t;
 

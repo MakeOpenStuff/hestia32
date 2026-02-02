@@ -159,6 +159,15 @@ static bool mqtt_is_connected(void) {
     return wifi_is_connected();
 }
 
+static bool mqtt_is_provisioned(void) {
+    return wifi_prov_is_provisioned();
+}
+
+static esp_err_t mqtt_start_provisioning(void) {
+    ESP_LOGI(TAG, "Starting MQTT provisioning (WiFi AP)");
+    return wifi_prov_start_ap();
+}
+
 static const char* mqtt_get_name(void) {
     return "MQTT";
 }
@@ -175,6 +184,8 @@ static const protocol_interface_t mqtt_protocol = {
     .report_relay_state = mqtt_report_relay_state,
     .report_boost_state = mqtt_report_boost_state,
     .is_connected = mqtt_is_connected,
+    .is_provisioned = mqtt_is_provisioned,
+    .start_provisioning = mqtt_start_provisioning,
     .get_name = mqtt_get_name,
 };
 

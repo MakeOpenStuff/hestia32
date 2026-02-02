@@ -8,13 +8,29 @@ set(CORE_SRCS
     "core/protocol_manager.c"
 )
 
-# Protocol-specific sources (MQTT for now)
-set(PROTOCOL_SRCS
-    "protocols/mqtt/mqtt_protocol.c"
-    "protocols/mqtt/wifi_manager.c"
-    "protocols/mqtt/wifi_provisioning.c"
-    "protocols/mqtt/ota_manager.c"
-)
+# Protocol-specific sources (conditionally compiled based on Kconfig)
+set(PROTOCOL_SRCS "")
+
+if(CONFIG_PROTOCOL_MQTT)
+    list(APPEND PROTOCOL_SRCS
+        "protocols/mqtt/mqtt_protocol.c"
+        "protocols/mqtt/wifi_manager.c"
+        "protocols/mqtt/wifi_provisioning.c"
+        "protocols/mqtt/ota_manager.c"
+    )
+endif()
+
+if(CONFIG_PROTOCOL_ZIGBEE)
+    list(APPEND PROTOCOL_SRCS
+        "protocols/zigbee/protocol_zigbee.c"
+    )
+endif()
+
+if(CONFIG_PROTOCOL_MATTER)
+    list(APPEND PROTOCOL_SRCS
+        "protocols/matter/protocol_matter.c"
+    )
+endif()
 
 # Main application
 set(APP_SRCS
@@ -36,5 +52,5 @@ idf_component_register(
              protocomm json spi_flash esp_lcd lvgl esp_lcd_ili9488
 )
 
-# Define CONFIG_PROTOCOL_MQTT for this component
-target_compile_definitions(${COMPONENT_LIB} PRIVATE CONFIG_PROTOCOL_MQTT=1)
+# Protocol selection is now controlled by Kconfig (CONFIG_PROTOCOL_*)
+# No need to manually define these anymore

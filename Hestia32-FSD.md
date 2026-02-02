@@ -990,14 +990,94 @@ git submodule update --init --recursive
 
 ## 11. Build and Deployment
 
-### 11.1 Building for ESP32-C5
+### 11.1 Protocol Selection
+
+Hestia32 supports multiple communication protocols for smart home integration. Select the desired protocol when building:
+
+#### Available Protocols
+
+| Protocol | Status | Description |
+|----------|--------|-------------|
+| **MQTT** | Fully Implemented | WiFi-based MQTT communication with Home Assistant, OpenHAB, etc. |
+| **Zigbee** | Placeholder | Future Zigbee 3.0 support (stub implementation only) |
+| **Matter** | Placeholder | Future Matter protocol support (stub implementation only) |
+
+#### Building with Specific Protocol
+
+**Method 1: Using sdkconfig presets (recommended)**
+
+```bash
+# MQTT Protocol (default)
+idf.py -D SDKCONFIG_DEFAULTS=sdkconfig.mqtt build
+
+# Zigbee Protocol (not yet implemented)
+idf.py -D SDKCONFIG_DEFAULTS=sdkconfig.zigbee build
+
+# Matter Protocol (not yet implemented)
+idf.py -D SDKCONFIG_DEFAULTS=sdkconfig.matter build
+```
+
+**Method 2: Interactive configuration**
+
+```bash
+idf.py menuconfig
+# Navigate to: Hestia32 Configuration → Communication Protocol
+# Select: MQTT over WiFi / Zigbee / Matter
+```
+
+**Method 3: Check current protocol**
+
+```bash
+grep "CONFIG_HESTIA32_PROTOCOL" sdkconfig
+```
+
+Expected output for MQTT:
+```
+CONFIG_HESTIA32_PROTOCOL_MQTT=y
+# CONFIG_HESTIA32_PROTOCOL_ZIGBEE is not set
+# CONFIG_HESTIA32_PROTOCOL_MATTER is not set
+```
+
+#### Protocol-Specific Build Components
+
+**MQTT Build:**
+- `protocols/mqtt/mqtt_protocol.c` - MQTT protocol implementation
+- `protocols/mqtt/wifi_manager.c` - WiFi connection management
+- `protocols/mqtt/wifi_provisioning.c` - AP-mode provisioning
+- `protocols/mqtt/ota_manager.c` - HTTPS OTA updates
+- WiFi stack enabled (~1.26 MB binary)
+
+**Zigbee Build (future):**
+- `protocols/zigbee/protocol_zigbee.c` - Zigbee protocol (stub)
+- ESP Zigbee SDK integration (planned)
+- Estimated size: ~800 KB
+
+**Matter Build (future):**
+- `protocols/matter/protocol_matter.c` - Matter protocol (stub)
+- ESP Matter SDK integration (planned)
+- Estimated size: ~1.5 MB
+
+#### Clean Build After Protocol Change
+
+When switching protocols, perform a clean reconfigure:
+
+```bash
+idf.py fullclean
+idf.py -D SDKCONFIG_DEFAULTS=sdkconfig.mqtt reconfigure
+idf.py build
+```
+
+### 11.2 Building for ESP32-C5
 
 ```bash
 # Set up environment
 source ~/esp/esp-idf-v5.5/export.sh
 
-# Build firmware
+# Build firmware (uses default protocol from sdkconfig)
 idf.py --preview build
+
+# Or specify protocol explicitly
+idf.py -D SDKCONFIG_DEFAULTS=sdkconfig.mqtt --preview build
 
 # View build output
 ls build/hestia32.bin
@@ -1009,7 +1089,7 @@ ls build/hestia32.bin
 - `build/partition_table/partition-table.bin` - Partition table
 - `build/ota_data_initial.bin` - OTA data initialization
 
-### 11.2 Flashing to ESP32-C5
+### 11.3 Flashing to ESP32-C5
 
 **Full flash (first time):**
 

@@ -691,6 +691,15 @@ CONFIG_PARTITION_TABLE_MD5=y
 # end of Partition Table
 
 #
+# Hestia32 Configuration
+#
+CONFIG_HESTIA32_PROTOCOL_MQTT=y
+# CONFIG_HESTIA32_PROTOCOL_ZIGBEE is not set
+# CONFIG_HESTIA32_PROTOCOL_MATTER is not set
+CONFIG_PROTOCOL_MQTT=y
+# end of Hestia32 Configuration
+
+#
 # Compiler options
 #
 CONFIG_COMPILER_OPTIMIZATION_DEBUG=y

@@ -1,0 +1,46 @@
+menu "Hestia32 Configuration"
+
+    choice HESTIA32_PROTOCOL
+        prompt "Communication Protocol"
+        default HESTIA32_PROTOCOL_MQTT
+        help
+            Select the communication protocol for smart home integration.
+            This determines which protocol stack is compiled into the firmware.
+
+        config HESTIA32_PROTOCOL_MQTT
+            bool "MQTT over WiFi"
+            help
+                Use MQTT protocol over WiFi for communication.
+                Requires WiFi provisioning and MQTT broker configuration.
+                Compatible with Home Assistant, OpenHAB, and other MQTT-based systems.
+
+        config HESTIA32_PROTOCOL_ZIGBEE
+            bool "Zigbee"
+            help
+                Use Zigbee protocol for communication (NOT YET IMPLEMENTED).
+                Requires Zigbee coordinator and network commissioning.
+                Compatible with Zigbee2MQTT, ZHA, and Zigbee hubs.
+                NOTE: This option is a placeholder for future development.
+
+        config HESTIA32_PROTOCOL_MATTER
+            bool "Matter"
+            help
+                Use Matter protocol for communication (NOT YET IMPLEMENTED).
+                Compatible with Apple HomeKit, Google Home, Amazon Alexa.
+                Supports multi-fabric (multiple ecosystems simultaneously).
+                NOTE: This option is a placeholder for future development.
+    endchoice
+
+    config PROTOCOL_MQTT
+        bool
+        default y if HESTIA32_PROTOCOL_MQTT
+
+    config PROTOCOL_ZIGBEE
+        bool
+        default y if HESTIA32_PROTOCOL_ZIGBEE
+
+    config PROTOCOL_MATTER
+        bool
+        default y if HESTIA32_PROTOCOL_MATTER
+
+endmenu

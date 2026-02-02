@@ -87,6 +87,36 @@ cd ~/esp/esp-idf-v5.5
 ./install.sh esp32c5
 ```
 
+#### Protocol Selection
+
+Hestia32 supports multiple communication protocols. Choose one when building:
+
+**MQTT over WiFi (Default - Fully Implemented)**
+```bash
+idf.py -D SDKCONFIG_DEFAULTS=sdkconfig.mqtt build
+```
+
+**Zigbee (Stub Only - Not Yet Implemented)**
+```bash
+idf.py -D SDKCONFIG_DEFAULTS=sdkconfig.zigbee build
+```
+
+**Matter (Stub Only - Not Yet Implemented)**
+```bash
+idf.py -D SDKCONFIG_DEFAULTS=sdkconfig.matter build
+```
+
+You can also select the protocol interactively:
+```bash
+idf.py menuconfig
+# Navigate to: Hestia32 Configuration → Communication Protocol
+```
+
+To check which protocol is currently selected:
+```bash
+grep "CONFIG_HESTIA32_PROTOCOL" sdkconfig
+```
+
 #### Build Commands
 
 ```bash

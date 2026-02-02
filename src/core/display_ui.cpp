@@ -1,5 +1,5 @@
-#include "display_ui.h"
-#include "display_config.h"
+#include "core/display_ui.h"
+#include "core/display_config.h"
 #include "esp_log.h"
 #include <stdio.h>
 

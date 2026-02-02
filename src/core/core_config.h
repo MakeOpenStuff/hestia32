@@ -2,7 +2,7 @@
 #define CORE_CONFIG_H
 
 // Application Configuration
-#define APP_VERSION "0.8.0"
+#define APP_VERSION "0.8.1"
 
 // Reset button configuration
 // Set to -1 to disable, or a GPIO number to enable factory reset on boot

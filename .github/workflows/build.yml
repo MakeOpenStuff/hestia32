@@ -12,6 +12,9 @@ on:
   release:
     types: [created]
 
+permissions:
+  contents: write  # Required for creating releases and uploading assets
+
 env:
   IDF_VERSION: v5.5.2
   IDF_TARGET: esp32c5

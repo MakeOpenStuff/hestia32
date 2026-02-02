@@ -11,9 +11,9 @@ set(CORE_SRCS
 # Protocol-specific sources (MQTT for now)
 set(PROTOCOL_SRCS
     "protocols/mqtt/mqtt_protocol.c"
-    "wifi_manager.c"
-    "wifi_provisioning.c"
-    "ota_manager.c"
+    "protocols/mqtt/wifi_manager.c"
+    "protocols/mqtt/wifi_provisioning.c"
+    "protocols/mqtt/ota_manager.c"
 )
 
 # Main application

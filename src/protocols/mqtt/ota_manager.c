@@ -1,5 +1,5 @@
-#include "ota_manager.h"
-#include "config.h"
+#include "protocols/mqtt/ota_manager.h"
+#include "core/core_config.h"
 
 #include <string.h>
 #include "freertos/FreeRTOS.h"

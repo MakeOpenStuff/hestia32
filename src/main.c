@@ -7,11 +7,12 @@
 #include "nvs_flash.h"
 #include "driver/gpio.h"
 
-#include "config.h"
-#include "wifi_manager.h"
-#include "wifi_provisioning.h"
-#include "ota_manager.h"
-#include "display_manager.h"
+#include "core/core_config.h"
+#include "protocols/mqtt/mqtt_config.h"
+#include "protocols/mqtt/wifi_manager.h"
+#include "protocols/mqtt/wifi_provisioning.h"
+#include "protocols/mqtt/ota_manager.h"
+#include "core/display_manager.h"
 #include "lvgl.h"
 
 static const char *TAG = "main";
@@ -69,10 +70,10 @@ void app_main(void) {
 
     if (initial_level == 0) {
         ESP_LOGW(TAG, "BOOT button pressed - checking for factory reset...");
-        ESP_LOGW(TAG, "Hold BOOT button for 3 seconds to erase settings");
+        ESP_LOGW(TAG, "Hold BOOT button for 5 seconds to erase settings");
 
         int hold_count = 0;
-        for (int i = 0; i < 30; i++) {  // Check for 3 seconds (30 * 100ms)
+        for (int i = 0; i < 50; i++) {  // Check for 5 seconds (50 * 100ms)
             vTaskDelay(pdMS_TO_TICKS(100));
             if (gpio_get_level((gpio_num_t)FACTORY_RESET_GPIO) == 0) {
                 hold_count++;

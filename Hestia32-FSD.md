@@ -202,7 +202,7 @@ Hestia32 provides a complete firmware solution for ESP32-based smart home device
 | T_DO (MISO) | 2 | **Dedicated** (display MISO disconnected) |
 | T_PEN (IRQ) | 15 | Active low pen detect |
 | **System** |||
-| BOOT Button | 28 | Factory reset (hold 3s on boot) |
+| BOOT Button | 28 | Factory reset (hold 5s on boot) |
 | UART0 TX | 11 | **Reserved** (do not use) |
 | UART0 RX | 12 | **Reserved** (do not use) |
 
@@ -254,7 +254,7 @@ For NodeMCU-32S boards using PlatformIO, pin assignments differ. Refer to `displ
 
 **Acceptance Criteria:**
 1. Hold BOOT button during power-on/reset
-2. Continue holding for 3 seconds
+2. Continue holding for 5 seconds
 3. System erases NVS (WiFi credentials + touch calibration)
 4. Device restarts in provisioning mode
 5. Serial console logs "Factory reset confirmed!"
@@ -1473,7 +1473,7 @@ gcc -Wall -Wextra -std=c11 -I. src/thermostat.c tests/test_thermostat.c -o test_
 
 **Solution:**
 1. Check serial logs for "Device provisioned" message
-2. Perform factory reset (hold BOOT 3 seconds)
+2. Perform factory reset (hold BOOT 5 seconds)
 3. Verify NVS partition is not corrupted: `idf.py erase-flash`
 
 ---
@@ -1536,7 +1536,7 @@ gcc -Wall -Wextra -std=c11 -I. src/thermostat.c tests/test_thermostat.c -o test_
 **Solution:**
 1. Verify BOOT button GPIO matches hardware (28 for C5, 0 for ESP32)
 2. Check button actually pulls GPIO low (test with multimeter)
-3. Increase hold time (currently 3 seconds)
+3. Increase hold time (currently 5 seconds)
 4. Check serial logs for "BOOT button level: 0"
 
 ---

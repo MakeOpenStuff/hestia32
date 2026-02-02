@@ -221,7 +221,7 @@ To erase WiFi credentials, touch calibration, and return to provisioning mode:
 1. Power off the device
 2. Press and hold the **BOOT** button
 3. Power on the device (or press RESET while holding BOOT)
-4. Keep holding the BOOT button for **3 seconds**
+4. Keep holding the BOOT button for **5 seconds**
 5. Release when you see "Factory reset confirmed!" in the serial monitor
 6. The device will erase all NVS data and reboot into provisioning mode
 

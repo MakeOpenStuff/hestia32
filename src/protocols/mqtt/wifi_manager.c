@@ -1,5 +1,5 @@
-#include "wifi_manager.h"
-#include "config.h"
+#include "protocols/mqtt/wifi_manager.h"
+#include "protocols/mqtt/mqtt_config.h"
 
 #include <string.h>
 #include "freertos/FreeRTOS.h"

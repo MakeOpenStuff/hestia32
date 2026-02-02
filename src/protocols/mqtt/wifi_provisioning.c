@@ -1,6 +1,6 @@
-#include "wifi_provisioning.h"
-#include "config.h"
-#include "provisioning_html.h"
+#include "protocols/mqtt/wifi_provisioning.h"
+#include "protocols/mqtt/mqtt_config.h"
+#include "protocols/mqtt/provisioning_html.h"
 
 #include <string.h>
 #include "esp_log.h"

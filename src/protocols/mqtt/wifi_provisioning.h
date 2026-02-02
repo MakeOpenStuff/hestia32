@@ -17,6 +17,12 @@ typedef struct {
     char server_url[MAX_SERVER_URL_LEN];
     char node_name[MAX_NODE_NAME_LEN];
     bool provisioned;
+    
+    // OTA update settings
+    bool ota_auto_update;           // Enable automatic OTA checks
+    uint8_t ota_release_channel;    // 0 = stable, 1 = develop (includes pre-releases)
+    uint32_t ota_check_interval;    // Check interval in hours
+    uint64_t ota_last_check;        // Unix timestamp of last check
 } wifi_config_data_t;
 
 /**

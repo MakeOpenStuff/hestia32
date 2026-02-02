@@ -105,6 +105,19 @@ static esp_err_t mqtt_start(void) {
         // Non-fatal - continue without OTA
     }
 
+    // Load OTA configuration and start periodic check task
+    static wifi_config_data_t ota_config;  // Static to keep it valid for task lifetime
+    err = wifi_prov_get_config(&ota_config);
+    if (err == ESP_OK) {
+        err = ota_start_check_task(&ota_config);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Failed to start OTA check task: %s", esp_err_to_name(err));
+            // Non-fatal - continue without automatic updates
+        }
+    } else {
+        ESP_LOGW(TAG, "Failed to load OTA config: %s", esp_err_to_name(err));
+    }
+
     ESP_LOGI(TAG, "MQTT protocol started successfully");
     return ESP_OK;
 }

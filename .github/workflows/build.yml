@@ -156,6 +156,11 @@ jobs:
 
       - name: Create release packages
         run: |
+          # Copy individual .bin files for OTA
+          cp mqtt-firmware/hestia32.bin hestia32-mqtt-${{ github.ref_name }}.bin
+          cp zigbee-firmware/hestia32.bin hestia32-zigbee-${{ github.ref_name }}.bin
+          cp matter-firmware/hestia32.bin hestia32-matter-${{ github.ref_name }}.bin
+          
           # Package MQTT firmware
           cd mqtt-firmware
           zip ../hestia32-mqtt-${{ github.ref_name }}.zip *
@@ -175,6 +180,9 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
+            hestia32-mqtt-${{ github.ref_name }}.bin
+            hestia32-zigbee-${{ github.ref_name }}.bin
+            hestia32-matter-${{ github.ref_name }}.bin
             hestia32-mqtt-${{ github.ref_name }}.zip
             hestia32-zigbee-${{ github.ref_name }}.zip
             hestia32-matter-${{ github.ref_name }}.zip

@@ -179,7 +179,7 @@ static esp_err_t scan_handler(httpd_req_t *req)
 // HTTP handler for WiFi connection
 static esp_err_t connect_handler(httpd_req_t *req)
 {
-    char buf[256];
+    char buf[512];  // Increased buffer size for OTA fields
     int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
     if (ret <= 0) {
         httpd_resp_send_500(req);
@@ -195,6 +195,9 @@ static esp_err_t connect_handler(httpd_req_t *req)
 
     cJSON *ssid_json = cJSON_GetObjectItem(root, "ssid");
     cJSON *password_json = cJSON_GetObjectItem(root, "password");
+    cJSON *ota_enabled_json = cJSON_GetObjectItem(root, "ota_enabled");
+    cJSON *ota_channel_json = cJSON_GetObjectItem(root, "ota_channel");
+    cJSON *ota_interval_json = cJSON_GetObjectItem(root, "ota_interval");
 
     if (!ssid_json || !cJSON_IsString(ssid_json)) {
         cJSON_Delete(root);
@@ -202,9 +205,10 @@ static esp_err_t connect_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    // Save WiFi credentials to NVS
+    // Save WiFi credentials and OTA settings to NVS
     nvs_handle_t nvs_handle;
     if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle) == ESP_OK) {
+        // WiFi credentials
         nvs_set_str(nvs_handle, "ssid", ssid_json->valuestring);
         if (password_json && cJSON_IsString(password_json)) {
             nvs_set_str(nvs_handle, "password", password_json->valuestring);
@@ -212,10 +216,24 @@ static esp_err_t connect_handler(httpd_req_t *req)
             nvs_set_str(nvs_handle, "password", "");
         }
         nvs_set_u8(nvs_handle, "provisioned", 1);
+        
+        // OTA settings
+        if (ota_enabled_json && cJSON_IsBool(ota_enabled_json)) {
+            nvs_set_u8(nvs_handle, "ota_enabled", cJSON_IsTrue(ota_enabled_json) ? 1 : 0);
+        }
+        if (ota_channel_json && cJSON_IsNumber(ota_channel_json)) {
+            nvs_set_u8(nvs_handle, "ota_channel", (uint8_t)ota_channel_json->valueint);
+        }
+        if (ota_interval_json && cJSON_IsNumber(ota_interval_json)) {
+            nvs_set_u32(nvs_handle, "ota_interval", (uint32_t)ota_interval_json->valueint);
+        }
+        
         nvs_commit(nvs_handle);
         nvs_close(nvs_handle);
 
-        ESP_LOGI(TAG, "WiFi credentials saved to NVS: %s", ssid_json->valuestring);
+        ESP_LOGI(TAG, "Configuration saved to NVS: SSID=%s, OTA=%s", 
+                 ssid_json->valuestring,
+                 (ota_enabled_json && cJSON_IsTrue(ota_enabled_json)) ? "enabled" : "disabled");
     }
 
     cJSON_Delete(root);
@@ -228,7 +246,7 @@ static esp_err_t connect_handler(httpd_req_t *req)
     free(resp_str);
     cJSON_Delete(response);
 
-    ESP_LOGI(TAG, "WiFi credentials saved. Rebooting in 2 seconds...");
+    ESP_LOGI(TAG, "Configuration saved. Rebooting in 2 seconds...");
     vTaskDelay(pdMS_TO_TICKS(2000));
     esp_restart();
 
@@ -461,6 +479,23 @@ esp_err_t wifi_prov_reset(void)
         nvs_get_u8(nvs_handle, "provisioned", &provisioned);
         config->provisioned = (provisioned == 1);
 
+        // Read OTA settings (with defaults)
+        uint8_t ota_enabled = 1;  // TODO: Set to 0 (false) once UI is implemented
+        nvs_get_u8(nvs_handle, "ota_enabled", &ota_enabled);
+        config->ota_auto_update = (ota_enabled == 1);
+
+        uint8_t channel = 0;  // Default: stable
+        nvs_get_u8(nvs_handle, "ota_channel", &channel);
+        config->ota_release_channel = channel;
+
+        uint32_t interval = 24;  // Default: 24 hours
+        nvs_get_u32(nvs_handle, "ota_interval", &interval);
+        config->ota_check_interval = interval;
+
+        uint64_t last_check = 0;
+        nvs_get_u64(nvs_handle, "ota_last_check", &last_check);
+        config->ota_last_check = last_check;
+
         nvs_close(nvs_handle);
     }
 
@@ -485,6 +520,12 @@ esp_err_t wifi_prov_save_config(const wifi_config_data_t *config)
     if (config->node_name[0]) {
         nvs_set_str(nvs_handle, "node_name", config->node_name);
     }
+
+    // Save OTA settings
+    nvs_set_u8(nvs_handle, "ota_enabled", config->ota_auto_update ? 1 : 0);
+    nvs_set_u8(nvs_handle, "ota_channel", config->ota_release_channel);
+    nvs_set_u32(nvs_handle, "ota_interval", config->ota_check_interval);
+    nvs_set_u64(nvs_handle, "ota_last_check", config->ota_last_check);
 
     nvs_commit(nvs_handle);
     nvs_close(nvs_handle);

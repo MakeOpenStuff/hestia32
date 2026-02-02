@@ -1,7 +1,7 @@
 # Hestia32 Firmware
 
-[![Build Status](https://github.com/YOUR_USERNAME/hestia32-firmware/actions/workflows/build.yml/badge.svg)](https://github.com/YOUR_USERNAME/hestia32-firmware/actions/workflows/build.yml)
-[![Tests](https://github.com/YOUR_USERNAME/hestia32-firmware/actions/workflows/build.yml/badge.svg?event=push)](https://github.com/YOUR_USERNAME/hestia32-firmware/actions)
+[![Build Status](https://github.com/MakeOpenStuff/hestia32-firmware/actions/workflows/build.yml/badge.svg)](https://github.com/MakeOpenStuff/hestia32-firmware/actions/workflows/build.yml)
+[![Tests](https://github.com/MakeOpenStuff/hestia32-firmware/actions/workflows/build.yml/badge.svg?event=push)](https://github.com/MakeOpenStuff/hestia32-firmware/actions)
 
 ESP32 firmware with WiFi provisioning, OTA updates, ILI9488 display, resistive touch and factory reset support.
 

@@ -480,7 +480,7 @@ esp_err_t wifi_prov_reset(void)
         config->provisioned = (provisioned == 1);
 
         // Read OTA settings (with defaults)
-        uint8_t ota_enabled = 1;  // TODO: Set to 0 (false) once UI is implemented
+        uint8_t ota_enabled = 0;  // Disabled by default - enable via UI or provisioning
         nvs_get_u8(nvs_handle, "ota_enabled", &ota_enabled);
         config->ota_auto_update = (ota_enabled == 1);
 

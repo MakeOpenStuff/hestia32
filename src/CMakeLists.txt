@@ -50,6 +50,7 @@ idf_component_register(
              esp_http_client esp_http_server esp_https_ota
              app_update bootloader_support wifi_provisioning
              protocomm json spi_flash esp_lcd lvgl esp_lcd_ili9488
+    PRIV_REQUIRES mbedtls
 )
 
 # Protocol selection is now controlled by Kconfig (CONFIG_PROTOCOL_*)

@@ -218,7 +218,17 @@ Hestia32 provides a complete firmware solution for ESP32-based smart home device
 - Backlight off: 20-30mA
 - Recommended: 100µF capacitor near display VCC/GND
 
-### 4.4 ESP32 (Original) Configuration
+### 4.4 Environmental Sensors
+
+**SHT45 Temperature & Humidity Sensor:**
+- Interface: I2C (address 0x44)
+- SCL: GPIO 4
+- SDA: GPIO 5
+- Accuracy: ±0.1°C, ±1% RH
+- Range: -40°C to 125°C, 0-100% RH
+- Power: 0.4µA (sleep), 800µA (measurement)
+
+### 4.5 ESP32 (Original) Configuration
 
 For NodeMCU-32S boards using PlatformIO, pin assignments differ. Refer to `display_config.h` for specific GPIO mappings. The BOOT button is typically GPIO 0.
 
@@ -1325,7 +1335,8 @@ Success Rate: 100.00%
 
 **Thermostat Integration:**
 - [ ] Wire thermostat module into main.c
-- [ ] Add temperature/humidity sensor support (BME280, SHT45)
+- [x] Add temperature/humidity sensor support (SHT45 - completed)
+- [x] Temperature unit preference (Celsius/Fahrenheit) stored in NVS
 - [ ] Create settings UI for setpoint adjustment
 - [ ] Add relay control for heating/cooling outputs
 - [ ] Display current temperature and mode on screen

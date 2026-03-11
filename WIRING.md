@@ -1,5 +1,7 @@
 # Hestia32 ESP32-C5 Display Wiring Guide
 
+This file was originally written for ESP32-C5-DevKitC-1 wiring. XIAO uses a different pin map and now has its own section below.
+
 ## ESP32-C5-DevKitC-1 Pinout (30-pin)
 
 ```
@@ -12,7 +14,7 @@
     │ 2           │ Touch MISO   │         RX0 │ (GPIO 12)
     │ 3           │ Relay 3      │         24  │ BME280 SDA
     │ 0           │ Relay 1      │         23  │
-    │ 1           │ Relay 2      │         15  │ Touch IRQ
+    │ 1           │ Relay 2      │         15  │ Touch IRQ/PEN
     │ 6           │ SPI CLK      │         27  │
     │ 7           │ SPI MOSI     │         4   │
     │ 8           │ Display DC   │         5   │ BME280 SCL
@@ -33,6 +35,57 @@
 - **BME280**: GPIO 4, 5 (I2C)
 - **Relays**: GPIO 0, 1, 3, 26
 - **Reserved**: TX0/RX0 (GPIO 11/12 - UART0), GPIO 28 (BOOT), RTS
+
+---
+
+## XIAO ESP32-C5 Wiring (Current Firmware)
+
+### XIAO ESP32-C5 Pinout (14-pin)
+
+```
+               XIAO ESP32-C5 (top view)
+
+                 USB-C CONNECTOR (top)
+        LEFT SIDE (7 pins)         RIGHT SIDE (7 pins)
+   ┌─────────────┐               ┌─────────────┐
+   │ D0 / GPIO1  │ Display DC    │ 5V          │ VBUS
+   │ D1 / GPIO0  │ Backlight     │ GND         │ GND
+   │ D2 / GPIO25 │ Display RST   │ 3V3         │ 3V3
+   │ D3 / GPIO7  │ Display CS    │ D10 / GPIO10│ Display MOSI + Touch MOSI
+   │ D4 / GPIO23 │ I2C SDA       │ D9  / GPIO9 │ Touch MISO
+   │ D5 / GPIO24 │ I2C SCL       │ D8  / GPIO8 │ Display SCK + Touch SCK
+   │ D6 / GPIO11 │ Touch IRQ/PEN │ D7  / GPIO12│ Touch CS
+   └─────────────┘               └─────────────┘
+                 ANTENNA SIDE (bottom)
+```
+
+//TODO: Pinout for both boards need verification and cleanup for useability
+### XIAO Pin Usage Summary
+- **Display**: GPIO 8,10,7,1,25
+- **Touch**: GPIO 12,11,8,9
+- **I2C (TCA9555/BME280)**: GPIO 23,24
+- **Power**: 5V, GND
+
+### Important
+- XIAO does not share the DevKit pin numbering layout. Do not wire XIAO using the DevKit table above.
+- In firmware, XIAO display mapping is defined in `src/core/display_config.h` under `#ifdef CONFIG_BOARD_TYPE_XIAO`.
+
+### XIAO Display/Touch Pin Mapping
+
+| Signal | XIAO GPIO | Notes |
+|--------|-----------|-------|
+| Display SCK | GPIO 8 | Seeed D8 |
+| Display MOSI | GPIO 10 | Seeed D10 |
+| Display MISO (unused) | Not connected - Display is write-only |
+| Display CS | GPIO 7 | Seeed D3 |
+| Display DC | GPIO 1 | Seeed D0 |
+| Display RST | GPIO 25 | Seeed D2 - Required for reliable startup on XIAO |
+| Backlight | GPIO 0 | Seeed D1, PWM-controlled with gradual boot ramp |
+| Touch SCK | GPIO 8 | Seeed D8 |
+| Touch CS | GPIO 12 | Seeed D7 |
+| Touch IRQ/PEN | GPIO 11 | Seeed D6 |
+| Touch MOSI | GPIO 10 | Seeed D10 |
+| Touch MISO | GPIO 9 | Seeed D9 |
 
 ---
 

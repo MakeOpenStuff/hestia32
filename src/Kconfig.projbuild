@@ -1,5 +1,32 @@
 menu "Hestia32 Configuration"
 
+    choice HESTIA32_BOARD_TYPE
+        prompt "Board Type"
+        default HESTIA32_BOARD_DEVKIT
+        help
+            Select the ESP32-C5 board type.
+
+        config HESTIA32_BOARD_DEVKIT
+            bool "ESP32-C5-DevKit"
+            help
+                Official Espressif ESP32-C5 DevKit with full GPIO access.
+                Supports display, relays via direct GPIO.
+
+        config HESTIA32_BOARD_XIAO
+            bool "Seeed XIAO ESP32-C5"
+            help
+                Seeed Studio XIAO ESP32-C5 compact board.
+                Limited GPIOs, uses TCA9555 I2C GPIO expander for relays.
+    endchoice
+
+    config BOARD_TYPE_DEVKIT
+        bool
+        default y if HESTIA32_BOARD_DEVKIT
+
+    config BOARD_TYPE_XIAO
+        bool
+        default y if HESTIA32_BOARD_XIAO
+
     choice HESTIA32_PROTOCOL
         prompt "Communication Protocol"
         default HESTIA32_PROTOCOL_MQTT

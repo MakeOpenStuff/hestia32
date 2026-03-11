@@ -248,6 +248,7 @@ esp_err_t ota_check_github_release(uint8_t release_channel)
 	if (!client) {
 			ESP_LOGE(TAG, "Failed to initialize HTTP client");
 			free(response_buffer);
+			display_ota_restore(false);
 			return ESP_FAIL;
 	}
 
@@ -257,6 +258,7 @@ esp_err_t ota_check_github_release(uint8_t release_channel)
 			ESP_LOGE(TAG, "Failed to open HTTP connection: %s", esp_err_to_name(err));
 			esp_http_client_cleanup(client);
 			free(response_buffer);
+			display_ota_restore(false);
 			return err;
 	}
 
@@ -268,6 +270,7 @@ esp_err_t ota_check_github_release(uint8_t release_channel)
 	if (read_len <= 0) {
 			ESP_LOGE(TAG, "Failed to read response");
 			free(response_buffer);
+			display_ota_restore(false);
 			return ESP_FAIL;
 	}
 
@@ -278,6 +281,7 @@ esp_err_t ota_check_github_release(uint8_t release_channel)
 	if (!json) {
 			ESP_LOGE(TAG, "Failed to parse JSON response");
 			free(response_buffer);
+			display_ota_restore(false);
 			return ESP_FAIL;
 	}
 
@@ -287,6 +291,7 @@ esp_err_t ota_check_github_release(uint8_t release_channel)
 			ESP_LOGE(TAG, "GitHub API error: %s", message->valuestring);
 			cJSON_Delete(json);
 			free(response_buffer);
+			display_ota_restore(false);
 			return ESP_ERR_NOT_FOUND;
 	}
 
@@ -304,6 +309,7 @@ esp_err_t ota_check_github_release(uint8_t release_channel)
 			ESP_LOGE(TAG, "No releases found");
 			cJSON_Delete(json);
 			free(response_buffer);
+			display_ota_restore(false);
 			return ESP_ERR_NOT_FOUND;
 	}
 
@@ -313,6 +319,7 @@ esp_err_t ota_check_github_release(uint8_t release_channel)
 			ESP_LOGE(TAG, "Invalid release format: no tag_name");
 			cJSON_Delete(json);
 			free(response_buffer);
+			display_ota_restore(false);
 			return ESP_FAIL;
 	}
 
@@ -339,6 +346,7 @@ esp_err_t ota_check_github_release(uint8_t release_channel)
 			ESP_LOGE(TAG, "No assets found in release");
 			cJSON_Delete(json);
 			free(response_buffer);
+			display_ota_restore(false);
 			return ESP_FAIL;
 	}
 
@@ -371,6 +379,7 @@ esp_err_t ota_check_github_release(uint8_t release_channel)
 			ESP_LOGE(TAG, "Firmware asset not found: %s", asset_name);
 			cJSON_Delete(json);
 			free(response_buffer);
+			display_ota_restore(false);
 			return ESP_ERR_NOT_FOUND;
 	}
 
@@ -382,6 +391,7 @@ esp_err_t ota_check_github_release(uint8_t release_channel)
 							 asset_size, update_partition->size);
 			cJSON_Delete(json);
 			free(response_buffer);
+			display_ota_restore(false);
 			return ESP_ERR_INVALID_SIZE;
 	}
 

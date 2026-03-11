@@ -6,6 +6,7 @@ set(CORE_SRCS
 		"core/display_manager.cpp"
 		"core/display_ui.cpp"
 		"core/protocol_manager.c"
+		"core/relay_manager.c"
 		"core/user_settings.c"
 		"core/sensor_sht45.c"
 )
@@ -54,6 +55,7 @@ idf_component_register(
 						 esp_http_client esp_http_server esp_https_ota
 						 app_update bootloader_support wifi_provisioning
 						 protocomm json spi_flash esp_lcd lvgl esp_lcd_ili9488
+						 tca9555
 		PRIV_REQUIRES mbedtls
 )
 

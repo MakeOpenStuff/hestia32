@@ -26,9 +26,13 @@
 // Static reusable line buffer (RGB666) to avoid large allocations
 static uint8_t *s_line_rgb666 = NULL;
 static size_t s_line_rgb666_size = 0;
+// Keep conversion buffer modest to avoid starving WiFi driver allocations.
+#define RGB666_CHUNK_LINES 8
 
 static const char *TAG = "display";
 //TODO: Check timeouts for calibration and blocking WiFi provisioning screens
+
+#define XIAO_DISPLAY_SAFE_INIT 0
 
 // NVS namespace for calibration
 #define NVS_CALIBRATION_NAMESPACE "touch_cal"
@@ -57,6 +61,8 @@ static spi_device_handle_t s_touch_dev = NULL;
 static lv_obj_t *touch_dot = NULL;
 static TaskHandle_t s_lvgl_task_handle = NULL;
 static lv_indev_t *s_touch_indev = NULL;
+static bool s_display_paused_for_ota = false;
+static bool s_backlight_ramp_started = false;
 static bool sSwapXY = false;
 static bool sFlipX = false;
 static bool sFlipY = false;
@@ -115,8 +121,14 @@ static bool xpt2046_read_raw(uint16_t *x, uint16_t *y)
 }
 
 // Backlight control
-static void backlight_init(void)
+static esp_err_t backlight_init(void)
 {
+		if (TFT_BL < 0) {
+				ESP_LOGW(TAG, "Backlight GPIO disabled (TFT_BL=%d), skipping PWM backlight init", TFT_BL);
+				return ESP_OK;
+		}
+
+		esp_err_t ret;
 		ledc_timer_config_t ledc_timer = {
 				.speed_mode       = LEDC_LOW_SPEED_MODE,
 				.duty_resolution  = LEDC_TIMER_8_BIT,
@@ -138,12 +150,43 @@ static void backlight_init(void)
 				.sleep_mode     = LEDC_SLEEP_MODE_NO_ALIVE_NO_PD,
 				.flags          = {}
 		};
-		ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
-		ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 255));
-		ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0));
+		ret = ledc_timer_config(&ledc_timer);
+		if (ret != ESP_OK) return ret;
+		ret = ledc_channel_config(&ledc_channel);
+		if (ret != ESP_OK) return ret;
+		// Start dark, then ramp after panel/UI init so fade is visible.
+		ret = ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, 0);
+		if (ret != ESP_OK) return ret;
+		ret = ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+		if (ret != ESP_OK) return ret;
+		return ESP_OK;
 }
 
-// LVGL flush callback with RGB565 to RGB666 conversion for ILI9488
+static void backlight_ramp_task(void *arg)
+{
+		(void)arg;
+		vTaskDelay(pdMS_TO_TICKS(700));
+
+		ESP_LOGI(TAG, "Backlight gradual ramp start");
+		for (int duty = 0; duty <= 255; duty += 16) {
+			esp_err_t ret = ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty);
+			if (ret != ESP_OK) {
+					ESP_LOGE(TAG, "Backlight ramp set_duty failed: %s", esp_err_to_name(ret));
+					break;
+			}
+			ret = ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+			if (ret != ESP_OK) {
+					ESP_LOGE(TAG, "Backlight ramp update_duty failed: %s", esp_err_to_name(ret));
+					break;
+			}
+			vTaskDelay(pdMS_TO_TICKS(90));
+		}
+
+		ESP_LOGI(TAG, "Backlight gradual ramp complete");
+		vTaskDelete(NULL);
+}
+
+// LVGL flush callback
 static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map)
 {
 		esp_lcd_panel_handle_t panel = (esp_lcd_panel_handle_t) drv->user_data;
@@ -155,20 +198,42 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t 
 		const int width = (offsetx2 - offsetx1 + 1);
 		const int height = (offsety2 - offsety1 + 1);
 
-		// Buffer already allocated at init
+#if XIAO_DISPLAY_SAFE_INIT
+		// In XIAO safe mode use RGB565 directly to avoid any format-conversion ambiguity.
+		esp_lcd_panel_draw_bitmap(panel, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_map);
+#else
+
+		// Convert and flush in chunks to reduce per-line SPI transaction overhead.
 		const uint16_t *src = (const uint16_t *)color_map;
-		for (int y = 0; y < height; y++) {
-				const uint16_t *row = src + (size_t)y * (size_t)width;
-				for (int x = 0; x < width; x++) {
-						const uint16_t pixel = row[x];
-						// Inline RGB565->RGB666 conversion
-						const size_t idx = (size_t)x * 3;
-						s_line_rgb666[idx + 0] = ((pixel >> 11) & 0x1F) << 3; // R
-						s_line_rgb666[idx + 1] = ((pixel >> 5) & 0x3F) << 2;  // G
-						s_line_rgb666[idx + 2] = (pixel & 0x1F) << 3;         // B
+		size_t bytes_per_line = (size_t)width * 3;
+		int lines_per_chunk = 1; // Artifact-safe path: never reuse conversion buffer for multiple queued lines.
+
+		for (int y0 = 0; y0 < height; y0 += lines_per_chunk) {
+				int chunk_h = height - y0;
+				if (chunk_h > lines_per_chunk) {
+						chunk_h = lines_per_chunk;
 				}
-				esp_lcd_panel_draw_bitmap(panel, offsetx1, offsety1 + y, offsetx2 + 1, offsety1 + y + 1, s_line_rgb666);
+
+				for (int y = 0; y < chunk_h; y++) {
+						const uint16_t *row = src + (size_t)(y0 + y) * (size_t)width;
+						uint8_t *dst = s_line_rgb666 + (size_t)y * bytes_per_line;
+						for (int x = 0; x < width; x++) {
+								const uint16_t pixel = row[x];
+								const size_t idx = (size_t)x * 3;
+								dst[idx + 0] = ((pixel >> 11) & 0x1F) << 3; // R
+								dst[idx + 1] = ((pixel >> 5) & 0x3F) << 2;  // G
+								dst[idx + 2] = (pixel & 0x1F) << 3;         // B
+						}
+				}
+
+				esp_lcd_panel_draw_bitmap(panel,
+						offsetx1,
+						offsety1 + y0,
+						offsetx2 + 1,
+						offsety1 + y0 + chunk_h,
+						s_line_rgb666);
 		}
+#endif
 		s_flush_count = s_flush_count + 1;
 		lv_disp_flush_ready(drv);
 }
@@ -176,6 +241,7 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t 
 esp_err_t display_init(void)
 {
 		ESP_LOGI(TAG, "Initializing display");
+		esp_err_t ret;
 
 		// Try to load calibration from NVS
 		nvs_handle_t nvs_handle;
@@ -208,27 +274,77 @@ esp_err_t display_init(void)
 		}
 
 		// Initialize backlight
-		backlight_init();
+		ESP_LOGI(TAG, "Display init step: backlight");
+#if XIAO_DISPLAY_SAFE_INIT
+		ESP_LOGW(TAG, "XIAO safe init: TFT_BL=%d", TFT_BL);
+		#if TFT_BL >= 0
+				ESP_LOGW(TAG, "XIAO safe init: forcing backlight GPIO ON (no PWM)");
+				gpio_config_t bl_conf = {
+						.pin_bit_mask = 1ULL << TFT_BL,
+						.mode = GPIO_MODE_OUTPUT,
+						.pull_up_en = GPIO_PULLUP_DISABLE,
+						.pull_down_en = GPIO_PULLDOWN_DISABLE,
+						.intr_type = GPIO_INTR_DISABLE,
+				};
+				ret = gpio_config(&bl_conf);
+				if (ret != ESP_OK) {
+						ESP_LOGE(TAG, "Display init failed at backlight gpio_config: %s", esp_err_to_name(ret));
+						return ret;
+				}
+				ret = gpio_set_level((gpio_num_t)TFT_BL, 1);
+				if (ret != ESP_OK) {
+						ESP_LOGE(TAG, "Display init failed at backlight gpio_set_level: %s", esp_err_to_name(ret));
+						return ret;
+				}
+		#else
+				ESP_LOGW(TAG, "XIAO safe init: no backlight GPIO configured (TFT_BL=%d)", TFT_BL);
+		#endif
+#else
+		ret = backlight_init();
+		if (ret != ESP_OK) {
+				ESP_LOGE(TAG, "Display init failed at backlight: %s", esp_err_to_name(ret));
+				return ret;
+		}
+#endif
 
-		// Allocate RGB666 line buffer FIRST
-		s_line_rgb666_size = TFT_WIDTH * 3;
+		// Allocate RGB666 conversion buffer FIRST (chunked, but memory-bounded).
+		s_line_rgb666_size = (size_t)TFT_WIDTH * RGB666_CHUNK_LINES * 3;
 		s_line_rgb666 = (uint8_t *)heap_caps_malloc(s_line_rgb666_size, MALLOC_CAP_DMA);
 		if (!s_line_rgb666) {
-				ESP_LOGE(TAG, "Failed to allocate RGB666 buffer");
-				return ESP_ERR_NO_MEM;
+				// Fallback to a single-line conversion buffer if memory is tight.
+				s_line_rgb666_size = TFT_WIDTH * 3;
+				s_line_rgb666 = (uint8_t *)heap_caps_malloc(s_line_rgb666_size, MALLOC_CAP_DMA);
+				if (!s_line_rgb666) {
+						ESP_LOGE(TAG, "Failed to allocate RGB666 buffer");
+						return ESP_ERR_NO_MEM;
+				}
+				ESP_LOGW(TAG, "Using single-line RGB666 buffer fallback");
 		}
+		ESP_LOGI(TAG, "Display init step: RGB666 buffer allocated");
 
 		// Configure SPI bus (skip if already initialized for reinit scenario)
 		if (!s_spi_initialized) {
 				spi_bus_config_t buscfg = {};
 				buscfg.mosi_io_num = TFT_MOSI;
+				#if XIAO_DISPLAY_SAFE_INIT
+				buscfg.miso_io_num = -1; // Safe mode: no touch, keep display bus write-only
+				#else
 				buscfg.miso_io_num = TOUCH_MISO; // Dedicated to touch only
+				#endif
 				buscfg.sclk_io_num = TFT_SCLK;
 				buscfg.quadwp_io_num = -1;
 				buscfg.quadhd_io_num = -1;
-				buscfg.max_transfer_sz = TFT_WIDTH * LVGL_BUFFER_HEIGHT * 3;
+				buscfg.max_transfer_sz = TFT_WIDTH * RGB666_CHUNK_LINES * 3;
+				#if XIAO_DISPLAY_SAFE_INIT
+				buscfg.flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_SCLK | SPICOMMON_BUSFLAG_MOSI;
+				#else
 				buscfg.flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_SCLK | SPICOMMON_BUSFLAG_MOSI | SPICOMMON_BUSFLAG_MISO;
-				ESP_ERROR_CHECK(spi_bus_initialize(TFT_SPI_HOST, &buscfg, SPI_DMA_CH_AUTO));
+				#endif
+				ret = spi_bus_initialize(TFT_SPI_HOST, &buscfg, SPI_DMA_CH_AUTO);
+				if (ret != ESP_OK) {
+						ESP_LOGE(TAG, "Display init failed at spi_bus_initialize: %s", esp_err_to_name(ret));
+						return ret;
+				}
 				s_spi_initialized = true;
 				ESP_LOGI(TAG, "SPI bus initialized");
 		} else {
@@ -241,12 +357,18 @@ esp_err_t display_init(void)
 		io_config.dc_gpio_num = TFT_DC;
 		io_config.spi_mode = 0;
 		io_config.pclk_hz = LCD_PIXEL_CLOCK_HZ;
-		io_config.trans_queue_depth = 3;  // Lower depth to reduce interleaving and tearing
+		io_config.trans_queue_depth = 1;  // Artifact-safe: keep only one in-flight transfer.
 		io_config.lcd_cmd_bits = LCD_CMD_BITS;
 		io_config.lcd_param_bits = LCD_PARAM_BITS;
-		ESP_ERROR_CHECK(esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)TFT_SPI_HOST, &io_config, &io_handle));
+		ESP_LOGI(TAG, "Display init step: panel IO");
+		ret = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)TFT_SPI_HOST, &io_config, &io_handle);
+		if (ret != ESP_OK) {
+				ESP_LOGE(TAG, "Display init failed at esp_lcd_new_panel_io_spi: %s", esp_err_to_name(ret));
+				return ret;
+		}
 
 		// Add touch device (XPT2046) on same SPI bus
+#if !XIAO_DISPLAY_SAFE_INIT
 		{
 				spi_device_interface_config_t devcfg = {};
 				devcfg.clock_speed_hz = 2 * 1000 * 1000; // 2 MHz for touch
@@ -255,7 +377,12 @@ esp_err_t display_init(void)
 				devcfg.queue_size = 3;
 				devcfg.flags = 0; // full duplex
 				devcfg.input_delay_ns = 0; // Remove delay for now
-				ESP_ERROR_CHECK(spi_bus_add_device(TFT_SPI_HOST, &devcfg, &s_touch_dev));
+				ESP_LOGI(TAG, "Display init step: touch device");
+				ret = spi_bus_add_device(TFT_SPI_HOST, &devcfg, &s_touch_dev);
+				if (ret != ESP_OK) {
+						ESP_LOGE(TAG, "Display init failed at spi_bus_add_device: %s", esp_err_to_name(ret));
+						return ret;
+				}
 
 				// Configure IRQ pin (active low)
 				gpio_config_t io_conf = {};
@@ -264,37 +391,110 @@ esp_err_t display_init(void)
 				io_conf.pull_up_en = GPIO_PULLUP_ENABLE;
 				io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
 				io_conf.intr_type = GPIO_INTR_DISABLE;
-				ESP_ERROR_CHECK(gpio_config(&io_conf));
+				ret = gpio_config(&io_conf);
+				if (ret != ESP_OK) {
+						ESP_LOGE(TAG, "Display init failed at touch gpio_config: %s", esp_err_to_name(ret));
+						return ret;
+				}
 		}
+#else
+		ESP_LOGW(TAG, "XIAO safe init: skipping touch controller setup");
+#endif
 
 		// Configure ILI9488 panel
 		esp_lcd_panel_dev_config_t panel_config = {};
 		panel_config.reset_gpio_num = TFT_RST;
 		panel_config.rgb_endian = LCD_RGB_ENDIAN_RGB;
+		#if XIAO_DISPLAY_SAFE_INIT
+		panel_config.bits_per_pixel = 16; // Safer baseline path for XIAO diagnostics
+		#else
 		panel_config.bits_per_pixel = 24; // ILI9488 SPI expects 18-bit (24bpp container)
-		ESP_ERROR_CHECK(esp_lcd_new_panel_ili9488(io_handle, &panel_config, &panel_handle));
+		#endif
+		ESP_LOGI(TAG, "Display init step: panel create");
+		ret = esp_lcd_new_panel_ili9488(io_handle, &panel_config, &panel_handle);
+		if (ret != ESP_OK) {
+				ESP_LOGE(TAG, "Display init failed at esp_lcd_new_panel_ili9488: %s", esp_err_to_name(ret));
+				return ret;
+		}
 
 		// Reset and initialize panel
-		ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
-		ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
+		ESP_LOGI(TAG, "Display init step: panel reset/init");
+		ret = esp_lcd_panel_reset(panel_handle);
+		if (ret != ESP_OK) {
+				ESP_LOGE(TAG, "Display init failed at panel_reset: %s", esp_err_to_name(ret));
+				return ret;
+		}
+		ret = esp_lcd_panel_init(panel_handle);
+		if (ret != ESP_OK) {
+				ESP_LOGE(TAG, "Display init failed at panel_init: %s", esp_err_to_name(ret));
+				return ret;
+		}
 
-		// Ensure pixel format 18-bit (RGB666) for ILI9488 SPI
+		// Some ILI9488 modules require explicit sleep-out/display-on sequence.
+		ret = esp_lcd_panel_io_tx_param(io_handle, 0x11, NULL, 0); // Sleep out
+		if (ret != ESP_OK) {
+				ESP_LOGE(TAG, "Display init failed at tx_param(0x11): %s", esp_err_to_name(ret));
+				return ret;
+		}
+		vTaskDelay(pdMS_TO_TICKS(120));
+		ret = esp_lcd_panel_io_tx_param(io_handle, 0x29, NULL, 0); // Display on
+		if (ret != ESP_OK) {
+				ESP_LOGE(TAG, "Display init failed at tx_param(0x29): %s", esp_err_to_name(ret));
+				return ret;
+		}
+		vTaskDelay(pdMS_TO_TICKS(20));
+
+		// Set interface pixel format explicitly.
 		{
+				#if XIAO_DISPLAY_SAFE_INIT
+				uint8_t pf = 0x55; // 16-bit/pixel RGB565
+				#else
 				uint8_t pf = 0x66; // 18-bit/pixel RGB666
-				ESP_ERROR_CHECK(esp_lcd_panel_io_tx_param(io_handle, 0x3A, &pf, 1));
+				#endif
+				ret = esp_lcd_panel_io_tx_param(io_handle, 0x3A, &pf, 1);
+				if (ret != ESP_OK) {
+						ESP_LOGE(TAG, "Display init failed at tx_param(0x3A): %s", esp_err_to_name(ret));
+						return ret;
+				}
 		}
 
 		// Orientation tweaks if needed (disable inversion for now)
-		ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, true, false));
-		ESP_ERROR_CHECK(esp_lcd_panel_swap_xy(panel_handle, false));
-		ESP_ERROR_CHECK(esp_lcd_panel_invert_color(panel_handle, false));
-		ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
+		ret = esp_lcd_panel_mirror(panel_handle, true, false);
+		if (ret != ESP_OK) {
+				ESP_LOGE(TAG, "Display init failed at panel_mirror: %s", esp_err_to_name(ret));
+				return ret;
+		}
+		ret = esp_lcd_panel_swap_xy(panel_handle, false);
+		if (ret != ESP_OK) {
+				ESP_LOGE(TAG, "Display init failed at panel_swap_xy: %s", esp_err_to_name(ret));
+				return ret;
+		}
+		ret = esp_lcd_panel_invert_color(panel_handle, false);
+		if (ret != ESP_OK) {
+				ESP_LOGE(TAG, "Display init failed at panel_invert_color: %s", esp_err_to_name(ret));
+				return ret;
+		}
+		ret = esp_lcd_panel_disp_on_off(panel_handle, true);
+		if (ret != ESP_OK) {
+				ESP_LOGE(TAG, "Display init failed at panel_disp_on_off: %s", esp_err_to_name(ret));
+				return ret;
+		}
+
+		ESP_LOGI(TAG, "Display init step: panel ready (test fill disabled)");
 
 		lv_init();
 
 		size_t buffer_size = TFT_WIDTH * LVGL_BUFFER_HEIGHT;
-		buf1 = (lv_color_t *)heap_caps_malloc(buffer_size * sizeof(lv_color_t), MALLOC_CAP_DMA);
-		buf2 = (lv_color_t *)heap_caps_malloc(buffer_size * sizeof(lv_color_t), MALLOC_CAP_DMA);
+		size_t lv_buf_bytes = buffer_size * sizeof(lv_color_t);
+		// LVGL draw buffers do not need DMA in this pipeline.
+		buf1 = (lv_color_t *)heap_caps_malloc(lv_buf_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+		if (!buf1) {
+				buf1 = (lv_color_t *)heap_caps_malloc(lv_buf_bytes, MALLOC_CAP_8BIT);
+		}
+		buf2 = (lv_color_t *)heap_caps_malloc(lv_buf_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+		if (!buf2) {
+				buf2 = (lv_color_t *)heap_caps_malloc(lv_buf_bytes, MALLOC_CAP_8BIT);
+		}
 		if (!buf1) {
 				ESP_LOGE(TAG, "Failed to allocate LVGL buffer 1");
 				return ESP_ERR_NO_MEM;
@@ -315,6 +515,7 @@ esp_err_t display_init(void)
 		lv_disp_drv_register(&disp_drv);
 
 		// Register LVGL touch input device
+#if !XIAO_DISPLAY_SAFE_INIT
 		{
 				static lv_indev_drv_t indev_drv;
 				lv_indev_drv_init(&indev_drv);
@@ -386,14 +587,31 @@ esp_err_t display_init(void)
 				};
 				s_touch_indev = lv_indev_drv_register(&indev_drv);
 		}
+#else
+		ESP_LOGW(TAG, "XIAO safe init: touch input disabled");
+#endif
 
 		ESP_LOGI(TAG, "Display initialized successfully (LVGL enabled)");
+
+		if (TFT_BL >= 0 && !s_backlight_ramp_started) {
+				BaseType_t tr = xTaskCreate(backlight_ramp_task, "bl_ramp", 2048, NULL, 1, NULL);
+				if (tr == pdPASS) {
+						s_backlight_ramp_started = true;
+				} else {
+						ESP_LOGE(TAG, "Failed to create backlight ramp task");
+				}
+		}
 
 		return ESP_OK;
 }
 
 bool display_has_calibration(void)
 {
+#if XIAO_DISPLAY_SAFE_INIT
+		ESP_LOGW(TAG, "XIAO safe init: bypassing touch calibration check");
+		return true;
+#endif
+
 		nvs_handle_t nvs_handle;
 		esp_err_t err = nvs_open(NVS_CALIBRATION_NAMESPACE, NVS_READONLY, &nvs_handle);
 		if (err != ESP_OK) {
@@ -653,6 +871,11 @@ static void lvgl_task(void *arg)
 		ESP_LOGI(TAG, "LVGL task started on core %d", xPortGetCoreID());
 
 		while (1) {
+				if (s_display_paused_for_ota) {
+						vTaskDelay(pdMS_TO_TICKS(50));
+						continue;
+				}
+
 				// Call LVGL timer handler
 				lv_timer_handler();
 
@@ -668,8 +891,8 @@ static void lvgl_task(void *arg)
 						}
 				}
 
-				// Run at ~100Hz for responsive UI
-				vTaskDelay(pdMS_TO_TICKS(10));
+				// Run near ~20 FPS target; actual FPS depends on flush cost.
+				vTaskDelay(pdMS_TO_TICKS(30));
 		}
 }
 
@@ -752,6 +975,11 @@ void display_resume(void)
 // RGB LED control for OTA status feedback
 static void ota_led_init(void)
 {
+		if (s_led_chan && s_led_encoder) {
+				ESP_LOGI(TAG, "OTA RGB LED already initialized, reusing existing RMT channel");
+				return;
+		}
+
 		ESP_LOGI(TAG, "Initializing RGB LED on GPIO %d for OTA status", OTA_RGB_LED_GPIO);
 
 		rmt_tx_channel_config_t tx_config = {
@@ -763,11 +991,31 @@ static void ota_led_init(void)
 			.intr_priority = 0,
 			.flags = {}
 		};
-		ESP_ERROR_CHECK(rmt_new_tx_channel(&tx_config, &s_led_chan));
-		ESP_ERROR_CHECK(rmt_enable(s_led_chan));
+		esp_err_t ret = rmt_new_tx_channel(&tx_config, &s_led_chan);
+		if (ret != ESP_OK) {
+				ESP_LOGE(TAG, "OTA RGB LED init failed at rmt_new_tx_channel: %s", esp_err_to_name(ret));
+				s_led_chan = NULL;
+				return;
+		}
+
+		ret = rmt_enable(s_led_chan);
+		if (ret != ESP_OK) {
+				ESP_LOGE(TAG, "OTA RGB LED init failed at rmt_enable: %s", esp_err_to_name(ret));
+				rmt_del_channel(s_led_chan);
+				s_led_chan = NULL;
+				return;
+		}
 
 		rmt_copy_encoder_config_t encoder_config = {};
-		ESP_ERROR_CHECK(rmt_new_copy_encoder(&encoder_config, &s_led_encoder));
+		ret = rmt_new_copy_encoder(&encoder_config, &s_led_encoder);
+		if (ret != ESP_OK) {
+				ESP_LOGE(TAG, "OTA RGB LED init failed at rmt_new_copy_encoder: %s", esp_err_to_name(ret));
+				rmt_disable(s_led_chan);
+				rmt_del_channel(s_led_chan);
+				s_led_chan = NULL;
+				s_led_encoder = NULL;
+				return;
+		}
 }
 
 static void ota_led_set_color(uint8_t r, uint8_t g, uint8_t b)
@@ -810,6 +1058,7 @@ void display_ota_prepare(void)
 	ESP_LOGI(TAG, "Free heap before: %lu bytes", heap_before);
 
 	// Suspend LVGL task first
+	s_display_paused_for_ota = true;
 	if (s_lvgl_task_handle) {
 		vTaskSuspend(s_lvgl_task_handle);
 		vTaskDelay(pdMS_TO_TICKS(100));
@@ -824,17 +1073,15 @@ void display_ota_prepare(void)
 		heap_caps_free(buf2);
 		buf2 = NULL;
 	}
-	if (s_line_rgb666) {
-		heap_caps_free(s_line_rgb666);
-		s_line_rgb666 = NULL;
-	}
+	// Keep RGB conversion buffer allocated. Freeing it here can race with pending
+	// panel transactions and corrupt flush callback state.
 
 	size_t heap_after = esp_get_free_heap_size();
 	ESP_LOGI(TAG, "Free heap after: %lu bytes", heap_after);
 	ESP_LOGI(TAG, "Memory freed: %ld bytes (~%ld KB)",
 					 (long)(heap_after - heap_before), (long)(heap_after - heap_before) / 1024);
 
-	// Initialize RGB LED for status
+	// Initialize RGB LED for status (best effort, non-fatal)
 	ota_led_init();
 	ota_led_set_color(0, 0, 255);  // Blue = preparing
 }
@@ -872,14 +1119,27 @@ void display_ota_restore(bool success)
 	}
 
 	// Reallocate display buffers
-	const int buf_size = TFT_WIDTH * 40;
-	buf1 = (lv_color_t *)heap_caps_malloc(buf_size * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-	buf2 = (lv_color_t *)heap_caps_malloc(buf_size * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-	s_line_rgb666 = (uint8_t *)heap_caps_malloc(TFT_WIDTH * 3, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+	const int buf_size = TFT_WIDTH * LVGL_BUFFER_HEIGHT;
+	const size_t lv_buf_bytes = buf_size * sizeof(lv_color_t);
+	buf1 = (lv_color_t *)heap_caps_malloc(lv_buf_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+	if (!buf1) {
+			buf1 = (lv_color_t *)heap_caps_malloc(lv_buf_bytes, MALLOC_CAP_8BIT);
+	}
+	buf2 = (lv_color_t *)heap_caps_malloc(lv_buf_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+	if (!buf2) {
+			buf2 = (lv_color_t *)heap_caps_malloc(lv_buf_bytes, MALLOC_CAP_8BIT);
+	}
+	if (!s_line_rgb666) {
+		s_line_rgb666_size = TFT_WIDTH * 3;
+		s_line_rgb666 = (uint8_t *)heap_caps_malloc(s_line_rgb666_size, MALLOC_CAP_DMA);
+	}
 
-	if (!buf1 || !buf2 || !s_line_rgb666) {
+	if (!buf1 || !s_line_rgb666) {
 			ESP_LOGE(TAG, "Failed to reallocate display buffers after OTA!");
 			return;
+	}
+	if (!buf2) {
+			ESP_LOGW(TAG, "OTA restore: LVGL buffer 2 unavailable, using single-buffer mode");
 	}
 
 	// Reinitialize LVGL draw buffer
@@ -890,6 +1150,7 @@ void display_ota_restore(bool success)
 
 	// Resume LVGL task
 	if (s_lvgl_task_handle) {
+			s_display_paused_for_ota = false;
 			vTaskResume(s_lvgl_task_handle);
 			ESP_LOGI(TAG, "Display resumed successfully");
 	}
@@ -914,14 +1175,27 @@ void display_ota_restore_no_update(void)
 	}
 
 	// Reallocate display buffers
-	const int buf_size = TFT_WIDTH * 40;
-	buf1 = (lv_color_t *)heap_caps_malloc(buf_size * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-	buf2 = (lv_color_t *)heap_caps_malloc(buf_size * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-	s_line_rgb666 = (uint8_t *)heap_caps_malloc(TFT_WIDTH * 3, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+	const int buf_size = TFT_WIDTH * LVGL_BUFFER_HEIGHT;
+	const size_t lv_buf_bytes = buf_size * sizeof(lv_color_t);
+	buf1 = (lv_color_t *)heap_caps_malloc(lv_buf_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+	if (!buf1) {
+			buf1 = (lv_color_t *)heap_caps_malloc(lv_buf_bytes, MALLOC_CAP_8BIT);
+	}
+	buf2 = (lv_color_t *)heap_caps_malloc(lv_buf_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+	if (!buf2) {
+			buf2 = (lv_color_t *)heap_caps_malloc(lv_buf_bytes, MALLOC_CAP_8BIT);
+	}
+	if (!s_line_rgb666) {
+		s_line_rgb666_size = TFT_WIDTH * 3;
+		s_line_rgb666 = (uint8_t *)heap_caps_malloc(s_line_rgb666_size, MALLOC_CAP_DMA);
+	}
 
-	if (!buf1 || !buf2 || !s_line_rgb666) {
+	if (!buf1 || !s_line_rgb666) {
 			ESP_LOGE(TAG, "Failed to reallocate display buffers!");
 			return;
+	}
+	if (!buf2) {
+			ESP_LOGW(TAG, "OTA no-update restore: LVGL buffer 2 unavailable, using single-buffer mode");
 	}
 
 	// Reinitialize LVGL draw buffer
@@ -932,6 +1206,7 @@ void display_ota_restore_no_update(void)
 
 	// Resume LVGL task
 	if (s_lvgl_task_handle) {
+			s_display_paused_for_ota = false;
 			vTaskResume(s_lvgl_task_handle);
 			ESP_LOGI(TAG, "Display resumed successfully");
 	}
@@ -961,11 +1236,15 @@ void display_ota_led_off(void)
 
 void display_update(void)
 {
-		// Legacy function - now deprecated, kept for compatibility during calibration
-		uint32_t now = lv_tick_get();
-		if (now - s_last_handler_ms >= 40) { // ~25 FPS max
+		// Provisioning mode depends on this path; use real time instead of LVGL ticks
+		// because lv_tick_inc is not driven in this project.
+		uint32_t now_ms = (uint32_t)(esp_timer_get_time() / 1000ULL);
+		if (now_ms - s_last_handler_ms >= 40) { // ~25 FPS max
+				if (s_display_paused_for_ota) {
+						return;
+				}
 				lv_timer_handler();
-				s_last_handler_ms = now;
+				s_last_handler_ms = now_ms;
 		}
 
 		// Update touch dot visibility/position if pressed

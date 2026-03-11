@@ -12,3 +12,4 @@ dependencies.lock
 # ESP-IDF generated config (do not commit)
 sdkconfig
 sdkconfig.old
+.vscode/settings.json

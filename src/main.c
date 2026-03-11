@@ -8,33 +8,131 @@
 #include "driver/gpio.h"
 
 #include "core/core_config.h"
+#include "core/display_config.h"
 #include "protocols/mqtt/mqtt_config.h"
 #include "core/protocol_manager.h"
 #include "core/display_manager.h"
+#include "core/relay_manager.h"
 #include "lvgl.h"
 
 static const char *TAG = "main";
 
+#if defined(CONFIG_BOARD_TYPE_DEVKIT) || defined(CONFIG_BOARD_TYPE_XIAO)
+#define DISPLAY_ENABLED 1
+#else
+#define DISPLAY_ENABLED 0
+#endif
+
+static void log_active_pin_config(void)
+{
+#ifdef CONFIG_BOARD_TYPE_XIAO
+    ESP_LOGI(TAG, "Board profile: XIAO ESP32-C5");
+#else
+    ESP_LOGI(TAG, "Board profile: ESP32-C5 DevKit");
+#endif
+
+    ESP_LOGI(TAG,
+             "Display pins: SCK=%d MOSI=%d CS=%d DC=%d RST=%d BL=%d TOUCH_CS=%d TOUCH_IRQ=%d TOUCH_MISO=%d",
+             TFT_SCLK, TFT_MOSI, TFT_CS, TFT_DC, TFT_RST, TFT_BL,
+             TOUCH_CS, TOUCH_IRQ, TOUCH_MISO);
+    ESP_LOGI(TAG, "Display settings: enabled=%d pclk=%dHz", DISPLAY_ENABLED, LCD_PIXEL_CLOCK_HZ);
+}
+
+static void poll_factory_reset_button_runtime(void)
+{
+#if FACTORY_RESET_GPIO >= 0
+    static bool s_button_init = false;
+    static int s_hold_count = 0;
+
+    if (!s_button_init) {
+        gpio_config_t io_conf = {
+            .pin_bit_mask = (1ULL << FACTORY_RESET_GPIO),
+            .mode = GPIO_MODE_INPUT,
+            .pull_up_en = GPIO_PULLUP_ENABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE,
+        };
+        gpio_config(&io_conf);
+        s_button_init = true;
+        ESP_LOGI(TAG, "Factory reset runtime button enabled on GPIO %d", FACTORY_RESET_GPIO);
+    }
+
+    if (gpio_get_level((gpio_num_t)FACTORY_RESET_GPIO) == 0) {
+        s_hold_count++;
+        if (s_hold_count == 1) {
+            ESP_LOGW(TAG, "BOOT pressed: hold for 5 seconds to factory reset");
+        }
+        if (s_hold_count >= 5) {
+            ESP_LOGW(TAG, "========================================");
+            ESP_LOGW(TAG, "Factory reset confirmed (runtime button hold)");
+            ESP_LOGW(TAG, "Erasing WiFi credentials and touchscreen calibration...");
+            ESP_LOGW(TAG, "========================================");
+
+            ESP_ERROR_CHECK(nvs_flash_erase());
+            ESP_ERROR_CHECK(nvs_flash_init());
+
+            ESP_LOGW(TAG, "Factory reset complete. Rebooting...");
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            esp_restart();
+        }
+    } else if (s_hold_count > 0) {
+        ESP_LOGI(TAG, "BOOT released before timeout (%d/5 seconds)", s_hold_count);
+        s_hold_count = 0;
+    }
+#endif
+}
+
+// Relay test function - comment out the call in app_main() when not needed
+static void test_relay_cycle(void)
+{
+    ESP_LOGI(TAG, "========================================");
+    ESP_LOGI(TAG, "RELAY TEST: Cycling through all relays...");
+    ESP_LOGI(TAG, "========================================");
+
+    for (int cycle = 0; cycle < 1; cycle++) {
+        ESP_LOGI(TAG, "Test cycle %d/3", cycle + 1);
+
+        for (int relay = 0; relay < 4; relay++) {
+            ESP_LOGI(TAG, "  Relay %d: ON", relay);
+            relay_manager_set_relay(relay, true);
+            vTaskDelay(pdMS_TO_TICKS(500));
+
+            ESP_LOGI(TAG, "  Relay %d: OFF", relay);
+            relay_manager_set_relay(relay, false);
+            vTaskDelay(pdMS_TO_TICKS(300));
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+
+    ESP_LOGI(TAG, "========================================");
+    ESP_LOGI(TAG, "RELAY TEST: Complete!");
+    ESP_LOGI(TAG, "========================================");
+}
+
+#if DISPLAY_ENABLED
 // Task to handle display during provisioning
 static void display_provisioning_task(void* param)
 {
     esp_err_t ret = display_init();
     if (ret == ESP_OK) {
         display_create_ui(true, true);
-        // Very slow updates to minimize CPU usage
+        // Keep provisioning UI responsive while WiFi task continues independently.
         while (1) {
             display_update();
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            vTaskDelay(pdMS_TO_TICKS(30));
         }
     }
     vTaskDelete(NULL);
 }
+#endif
 
 void app_main(void) {
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "Hestia32 ESP32-C5 Application");
     ESP_LOGI(TAG, "Firmware Version: %s", APP_VERSION);
     ESP_LOGI(TAG, "========================================");
+    log_active_pin_config();
 
     // Initialize NVS
     esp_err_t ret = nvs_flash_init();
@@ -46,59 +144,10 @@ void app_main(void) {
     ESP_ERROR_CHECK(ret);
     ESP_LOGI(TAG, "NVS initialized");
 
-    // Check for factory reset button (BOOT button held during boot)
-#if FACTORY_RESET_GPIO >= 0
-    ESP_LOGI(TAG, "Checking BOOT button on GPIO %d...", FACTORY_RESET_GPIO);
+    ESP_LOGI(TAG, "Factory reset: hold BOOT for 5 seconds while running");
 
-    gpio_config_t io_conf = {
-        .pin_bit_mask = (1ULL << FACTORY_RESET_GPIO),
-        .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-    gpio_config(&io_conf);
-
-    // Give GPIO time to settle
-    vTaskDelay(pdMS_TO_TICKS(50));
-
-    int initial_level = gpio_get_level((gpio_num_t)FACTORY_RESET_GPIO);
-    ESP_LOGI(TAG, "BOOT button GPIO %d level: %d (0=pressed, 1=released)",
-             FACTORY_RESET_GPIO, initial_level);
-
-    if (initial_level == 0) {
-        ESP_LOGW(TAG, "BOOT button pressed - checking for factory reset...");
-        ESP_LOGW(TAG, "Hold BOOT button for 5 seconds to erase settings");
-
-        int hold_count = 0;
-        for (int i = 0; i < 50; i++) {  // Check for 5 seconds (50 * 100ms)
-            vTaskDelay(pdMS_TO_TICKS(100));
-            if (gpio_get_level((gpio_num_t)FACTORY_RESET_GPIO) == 0) {
-                hold_count++;
-            } else {
-                ESP_LOGI(TAG, "BOOT button released - continuing normal boot");
-                break;
-            }
-        }
-
-        if (hold_count >= 30) {
-            ESP_LOGW(TAG, "========================================");
-            ESP_LOGW(TAG, "Factory reset confirmed!");
-            ESP_LOGW(TAG, "Erasing WiFi credentials and touchscreen calibration...");
-            ESP_LOGW(TAG, "========================================");
-
-            // Erase all NVS data (includes WiFi config and touch calibration)
-            ESP_ERROR_CHECK(nvs_flash_erase());
-            ESP_ERROR_CHECK(nvs_flash_init());
-
-            ESP_LOGW(TAG, "Factory reset complete. Rebooting...");
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            esp_restart();
-        }
-    }
-#endif
-
-// PRIORITY 1: Check if calibration exists - run wizard if needed BEFORE WiFi provisioning
+    // PRIORITY 1: Check if calibration exists - run wizard if needed BEFORE WiFi provisioning
+#if DISPLAY_ENABLED
     bool has_calibration = display_has_calibration();
 
     if (!has_calibration) {
@@ -116,6 +165,19 @@ void app_main(void) {
         ESP_LOGI(TAG, "Restarting to continue with WiFi provisioning...");
         vTaskDelay(pdMS_TO_TICKS(1000));
         esp_restart();
+    }
+#else
+    ESP_LOGI(TAG, "Display disabled for this board configuration");
+#endif
+
+    // Initialize relay control
+    ret = relay_manager_init();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "Relay manager initialization failed (continuing anyway)");
+    } else {
+        ESP_LOGI(TAG, "Relay manager initialized - test cycle disabled for display testing");
+        // Test relay control - comment out when not needed
+        // test_relay_cycle();
     }
 
     // Initialize protocol manager
@@ -144,8 +206,12 @@ void app_main(void) {
         // Wait for DHCP to initialize
         vTaskDelay(pdMS_TO_TICKS(2000));
 
-        // Initialize display on a low priority task (priority 2) to not interfere with DHCP
+        // Initialize display on a low priority task to not interfere with DHCP
+    #if DISPLAY_ENABLED
         xTaskCreate(display_provisioning_task, "display_prov", 4096, NULL, 2, NULL);
+    #else
+        ESP_LOGI(TAG, "Provisioning mode running headless (display disabled)");
+    #endif
 
         // Main task just waits (device will restart after provisioning)
         while (1) {
@@ -154,6 +220,7 @@ void app_main(void) {
     }
 
     // Device is provisioned and calibrated - initialize display with full UI
+#if DISPLAY_ENABLED
     ESP_LOGI(TAG, "Initializing display...");
     ret = display_init();
     if (ret == ESP_OK) {
@@ -163,6 +230,9 @@ void app_main(void) {
     } else {
         ESP_LOGE(TAG, "Display initialization failed");
     }
+#else
+    ESP_LOGI(TAG, "Running headless mode (display disabled)");
+#endif
 
     // Device is provisioned and calibrated - start protocol
     ESP_LOGI(TAG, "Starting protocol connection...");
@@ -179,6 +249,7 @@ void app_main(void) {
     // Optional: Add application logic here or just suspend
     while (1) {
         // Main task suspended, other tasks (LVGL, WiFi, etc.) continue running
+        poll_factory_reset_button_runtime();
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }

@@ -236,15 +236,15 @@ Run tests before committing changes to ensure thermostat logic correctness:
 
 1. Flash the firmware to your device
 2. On first boot, the device creates a WiFi access point:
-   - **SSID:** `HESTIA32`
-   - **Password:** None (open network)
+	 - **SSID:** `HESTIA32`
+	 - **Password:** None (open network)
 3. Connect to the `HESTIA32` WiFi network
 4. Open a web browser and navigate to `http://192.168.4.1`
 5. Enter your WiFi credentials and configuration:
-   - WiFi SSID
-   - WiFi Password
-   - Node Name (optional)
-   - OTA Server URL (optional)
+	 - WiFi SSID
+	 - WiFi Password
+	 - Node Name (optional)
+	 - OTA Server URL (optional)
 6. Click Save - the device will restart and connect to your WiFi
 
 ### Factory Reset
@@ -341,21 +341,38 @@ If the device won't connect to WiFi after provisioning:
 If thermostat tests fail:
 
 1. Check that you have a C11-compatible compiler:
-   ```bash
-   gcc --version  # Should be 4.9 or later
-   ```
+	 ```bash
+	 gcc --version  # Should be 4.9 or later
+	 ```
 
 2. Ensure all source files are present:
-   ```bash
-   ls src/thermostat.c src/thermostat.h tests/test_thermostat.c
-   ```
+	 ```bash
+	 ls src/thermostat.c src/thermostat.h tests/test_thermostat.c
+	 ```
 
 3. Run with verbose output to see which test failed:
-   ```bash
-   ./build/test_thermostat
-   ```
+	 ```bash
+	 ./build/test_thermostat
+	 ```
 
 4. If colors don't display correctly, your terminal may not support ANSI codes
+
+## TODO
+
+### Known Issues & Pending Tasks
+
+- [ ] **WiFi Model**
+	- [ ] Fix serial logging on DevKit - Serial output stops after bootloader on ESP32-C5 DevKit, investigate USB re-enumeration or UART configuration
+	- [ ] Verify SHT45 operation on DevKit - Confirm sensor reads correctly with swapped I2C pins (SDA=GPIO5, SCL=GPIO4)
+	- [ ] Update WIRING.md pinout diagram - Reconcile conflicting GPIO assignments in DevKit pinout diagram vs. connection tables
+	- [ ] Update Project Structure section - Reflect current codebase organization with display, relay, and sensor modules
+- [ ] **UI Design & Implementation**
+	- [ ] Design and implement main thermostat control interface
+	- [ ] Create settings/configuration screens
+	- [ ] Implement touch interactions and navigation
+	- [ ] Add visual feedback for heating/cooling states
+- [ ] **Zigbee Model**
+- [ ] **Matter Model**
 
 ## License
 

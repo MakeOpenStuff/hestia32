@@ -2,6 +2,7 @@
 #define DISPLAY_UI_H
 
 #include "lvgl.h"
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -22,6 +23,15 @@ void display_ui_create_main(lv_obj_t *scr, lv_obj_t **touch_dot, volatile uint32
  * @param scr The LVGL screen object to create UI on
  */
 void display_ui_create_provisioning(lv_obj_t *scr);
+
+/**
+ * @brief Update sensor data display on the UI
+ *
+ * @param temperature Temperature value
+ * @param humidity Humidity value
+ * @param is_celsius True for Celsius, false for Fahrenheit
+ */
+void display_ui_update_sensor(float temperature, float humidity, bool is_celsius);
 
 #ifdef __cplusplus
 }

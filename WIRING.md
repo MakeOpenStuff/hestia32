@@ -5,34 +5,34 @@ This file was originally written for ESP32-C5-DevKitC-1 wiring. XIAO uses a diff
 ## ESP32-C5-DevKitC-1 Pinout (30-pin)
 
 ```
-                    ESP32-C5-DevKitC-1 (30-pin)
+										ESP32-C5-DevKitC-1 (30-pin)
 
-         LEFT SIDE (15 pins)         RIGHT SIDE (15 pins)
-    ┌─────────────┐              ┌─────────────┐
-    │ 3V3         │              │         GND │
-    │ RTS         │              │         TX0 │ (GPIO 11)
-    │ 2           │ Touch MISO   │         RX0 │ (GPIO 12)
-    │ 3           │ Relay 3      │         24  │ BME280 SDA
-    │ 0           │ Relay 1      │         23  │
-    │ 1           │ Relay 2      │         15  │ Touch IRQ/PEN
-    │ 6           │ SPI CLK      │         27  │
-    │ 7           │ SPI MOSI     │         4   │
-    │ 8           │ Display DC   │         5   │ BME280 SCL
-    │ 9           │ Display RST  │         NC  │
-    │ 10          │ Display CS   │         28  │
-    │ 26          │ Relay 4      │         GND │
-    │ 25          │              │         14  │ Touch CS
-    │ 5V          │              │         13  │ Backlight
-    │ GND         │              │         GND │
-    └─────────────┘              └─────────────┘
-                       USB-C
+				 LEFT SIDE (15 pins)         RIGHT SIDE (15 pins)
+		┌─────────────┐              ┌─────────────┐
+		│ 3V3         │              │         GND │
+		│ RTS         │              │         TX0 │ (GPIO 11)
+		│ 2           │ Touch MISO   │         RX0 │ (GPIO 12)
+		│ 3           │ Relay 3      │         24  │
+		│ 0           │ Relay 1      │         23  │
+		│ 1           │ Relay 2      │         15  │ Touch IRQ/PEN
+		│ 6           │ SPI CLK      │         27  │
+		│ 7           │ SPI MOSI     │         4   │ SHT45 SCL
+		│ 8           │ Display DC   │         5   │ SHT45 SDA
+		│ 9           │ Display RST  │         NC  │
+		│ 10          │ Display CS   │         28  │
+		│ 26          │ Relay 4      │         GND │
+		│ 25          │              │         14  │ Touch CS
+		│ 5V          │              │         13  │ Backlight
+		│ GND         │              │         GND │
+		└─────────────┘              └─────────────┘
+											 USB-C
 ```
 
 ### Pin Usage Summary
 - **Power Rails**: 3.3V (left top), 5V (left bottom), GND (multiple)
 - **Display**: GPIO 6-10, 13 (SPI + backlight)
 - **Touch**: GPIO 2, 14, 15 (shared SPI on 6-7)
-- **BME280**: GPIO 4, 5 (I2C)
+- **SHT45 Sensor**: GPIO 4 (SCL), GPIO 5 (SDA) - I2C
 - **Relays**: GPIO 0, 1, 3, 26
 - **Reserved**: TX0/RX0 (GPIO 11/12 - UART0), GPIO 28 (BOOT), RTS
 
@@ -43,27 +43,27 @@ This file was originally written for ESP32-C5-DevKitC-1 wiring. XIAO uses a diff
 ### XIAO ESP32-C5 Pinout (14-pin)
 
 ```
-               XIAO ESP32-C5 (top view)
+							 XIAO ESP32-C5 (top view)
 
-                 USB-C CONNECTOR (top)
-        LEFT SIDE (7 pins)         RIGHT SIDE (7 pins)
-   ┌─────────────┐               ┌─────────────┐
-   │ D0 / GPIO1  │ Display DC    │ 5V          │ VBUS
-   │ D1 / GPIO0  │ Backlight     │ GND         │ GND
-   │ D2 / GPIO25 │ Display RST   │ 3V3         │ 3V3
-   │ D3 / GPIO7  │ Display CS    │ D10 / GPIO10│ Display MOSI + Touch MOSI
-   │ D4 / GPIO23 │ I2C SDA       │ D9  / GPIO9 │ Touch MISO
-   │ D5 / GPIO24 │ I2C SCL       │ D8  / GPIO8 │ Display SCK + Touch SCK
-   │ D6 / GPIO11 │ Touch IRQ/PEN │ D7  / GPIO12│ Touch CS
-   └─────────────┘               └─────────────┘
-                 ANTENNA SIDE (bottom)
+								 USB-C CONNECTOR (top)
+				LEFT SIDE (7 pins)         RIGHT SIDE (7 pins)
+	 ┌─────────────┐               ┌─────────────┐
+	 │ D0 / GPIO1  │ Display DC    │ 5V          │ VBUS
+	 │ D1 / GPIO0  │ Backlight     │ GND         │ GND
+	 │ D2 / GPIO25 │ Display RST   │ 3V3         │ 3V3
+	 │ D3 / GPIO7  │ Display CS    │ D10 / GPIO10│ Display MOSI + Touch MOSI
+	 │ D4 / GPIO23 │ I2C SDA       │ D9  / GPIO9 │ Touch MISO
+	 │ D5 / GPIO24 │ I2C SCL       │ D8  / GPIO8 │ Display SCK + Touch SCK
+	 │ D6 / GPIO11 │ Touch IRQ/PEN │ D7  / GPIO12│ Touch CS
+	 └─────────────┘               └─────────────┘
+								 ANTENNA SIDE (bottom)
 ```
 
 //TODO: Pinout for both boards need verification and cleanup for useability
 ### XIAO Pin Usage Summary
 - **Display**: GPIO 8,10,7,1,25
 - **Touch**: GPIO 12,11,8,9
-- **I2C (TCA9555/BME280)**: GPIO 23,24
+- **I2C (TCA9555/SHT45)**: GPIO 23,24
 - **Power**: 5V, GND
 
 ### Important
@@ -146,7 +146,7 @@ This file was originally written for ESP32-C5-DevKitC-1 wiring. XIAO uses a diff
 
 ---
 
-## BME280 Environmental Sensor
+## SHT45 Temperature & Humidity Sensor
 
 ### Sensor Specifications
 - Measures: Temperature, Humidity, Pressure
@@ -155,12 +155,12 @@ This file was originally written for ESP32-C5-DevKitC-1 wiring. XIAO uses a diff
 
 ### Pin Connections
 
-| BME280 Pin | ESP32-C5 GPIO | Notes |
+| SHT45 Pin | ESP32-C5 GPIO | Notes |
 |------------|---------------|-------|
 | VCC | 3.3V | Power supply |
 | GND | GND | Ground |
-| SDA | GPIO 4 | I2C Data |
-| SCL | GPIO 5 | I2C Clock |
+| SDA | GPIO 5 | I2C Data |
+| SCL | GPIO 4 | I2C Clock |
 
 ### I2C Configuration
 - **I2C Port**: I2C_NUM_0
@@ -168,7 +168,7 @@ This file was originally written for ESP32-C5-DevKitC-1 wiring. XIAO uses a diff
 - **Pull-ups**: Internal pull-ups enabled
 
 ### Notes
-1. BME280 uses I2C interface with 7-bit addressing
+1. SHT45 uses I2C interface with 7-bit addressing (address 0x44)
 2. Default I2C address is 0x76, alternative is 0x77 (check your module)
 3. Built-in driver handles calibration data and compensation automatically
 
@@ -210,8 +210,8 @@ Four SSR outputs for HVAC control (heating, cooling, fan, etc.)
 | 1 | Relay 2 | SSR control |
 | 2 | Touch MISO | XPT2046 data out |
 | 3 | Relay 3 | SSR control |
-| 4 | BME280 SDA | I2C data |
-| 5 | BME280 SCL | I2C clock |
+| 4 | SHT45 SDA | I2C data |
+| 5 | SHT45 SCL | I2C clock |
 | 6 | SPI Clock | Shared display/touch |
 | 7 | SPI MOSI | Shared display/touch |
 | 8 | Display DC | Data/Command |

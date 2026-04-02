@@ -36,11 +36,12 @@ esp_err_t relay_manager_init(void)
         ESP_LOGI(TAG, "TCA9555 detected! Using I2C GPIO expander mode");
         use_tca9555 = true;
 
-        // Configure relay pins as outputs (active LOW for most relay modules)
+        // Configure relay pins as outputs with active-LOW logic
+        // Initial state: pins HIGH = relays OFF (safe state)
         for (int i = 0; i < RELAY_COUNT; i++) {
             uint8_t pin = RELAY_TCA9555_PIN_BASE + i;
             tca9555_set_pin_mode(I2C_MASTER_NUM, TCA9555_I2C_ADDR, pin, TCA9555_PIN_OUTPUT);
-            tca9555_set_pin_level(I2C_MASTER_NUM, TCA9555_I2C_ADDR, pin, 1);  // OFF (active LOW)
+            tca9555_set_pin_level(I2C_MASTER_NUM, TCA9555_I2C_ADDR, pin, 1);  // HIGH = OFF (active LOW)
             relay_states[i] = false;
         }
 
@@ -71,7 +72,7 @@ esp_err_t relay_manager_init(void)
         return ret;
     }
 
-    // Initialize all relays to OFF (active LOW)
+    // Initialize all relays to OFF with active-LOW logic (HIGH = OFF)
     gpio_set_level(RELAY_GPIO_1, 1);
     gpio_set_level(RELAY_GPIO_2, 1);
     gpio_set_level(RELAY_GPIO_3, 1);
@@ -130,8 +131,11 @@ esp_err_t relay_manager_set_relay(uint8_t relay_num, bool state)
         return ESP_ERR_INVALID_ARG;
     }
 
-    // Active LOW logic: 0=ON, 1=OFF
-    uint8_t level = state ? 0 : 1;
+    // Active LOW logic for fail-safe operation:
+    // - GPIO HIGH (3.3V) during boot/reset = Relay OFF (safe state)
+    // - GPIO LOW (0V) = Relay ON (energized)
+    // Wiring: SSR positive control pin → +5V, negative → ESP32 GPIO
+    uint8_t level = state ? 0 : 1;  // state=true → GPIO LOW (ON), state=false → GPIO HIGH (OFF)
 
 #if RELAY_USE_TCA9555
     if (use_tca9555) {

@@ -69,6 +69,16 @@ This file was originally written for ESP32-C5-DevKitC-1 wiring. XIAO uses a diff
 ### Important
 - XIAO does not share the DevKit pin numbering layout. Do not wire XIAO using the DevKit table above.
 - In firmware, XIAO display mapping is defined in `src/core/display_config.h` under `#ifdef CONFIG_BOARD_TYPE_XIAO`.
+- **XIAO Relays**: Controlled via TCA9555 I2C GPIO expander pins 0-3, same active-LOW logic (expander pin LOW = relay ON)
+
+### XIAO Relay Configuration (via TCA9555)
+```
+TCA9555 Pin 0 → Relay 1 control input (active-LOW)
+TCA9555 Pin 1 → Relay 2 control input (active-LOW)
+TCA9555 Pin 2 → Relay 3 control input (active-LOW)
+TCA9555 Pin 3 → Relay 4 control input (active-LOW)
+```
+Wire each TCA9555 output pin to SSR control negative, with SSR control positive to +5V (same as DevKit).
 
 ### XIAO Display/Touch Pin Mapping
 
@@ -183,21 +193,41 @@ Four SSR outputs for HVAC control (heating, cooling, fan, etc.)
 
 | Relay | ESP32-C5 GPIO | Function | Notes |
 |-------|---------------|----------|-------|
-| Relay 1 | GPIO 0 | Output 1 | Active HIGH to trigger SSR |
-| Relay 2 | GPIO 1 | Output 2 | Active HIGH to trigger SSR |
-| Relay 3 | GPIO 3 | Output 3 | Active HIGH to trigger SSR |
-| Relay 4 | GPIO 26 | Output 4 | Active HIGH to trigger SSR |
+| Relay 1 | GPIO 0 | Output 1 | Active LOW - GPIO LOW = Relay ON |
+| Relay 2 | GPIO 1 | Output 2 | Active LOW - GPIO LOW = Relay ON |
+| Relay 3 | GPIO 3 | Output 3 | Active LOW - GPIO LOW = Relay ON |
+| Relay 4 | GPIO 26 | Output 4 | Active LOW - GPIO LOW = Relay ON |
 
 ### Relay Control
-- **Logic Level**: 3.3V (HIGH = relay ON)
-- **Control Type**: Direct GPIO output
+- **Logic Level**: Active LOW (GPIO LOW = relay ON, GPIO HIGH = relay OFF)
+- **Wiring**: SSR control + pin → +5V, control - pin → ESP32 GPIO
+- **Control Type**: Direct GPIO output (DevKit) or TCA9555 I2C expander (XIAO)
 - **Switching**: Solid state (no mechanical contacts)
+- **Recommended SSR**: OMRON G3MB-202P or similar with 5V input
+
+### Why Active-LOW?
+- **Fail-safe**: GPIOs default HIGH during boot → relays stay OFF
+- **Safety**: System crash or reset keeps outputs disabled
+- **Current sinking**: GPIOs sink current better than sourcing
 
 ### Notes
 1. SSRs should have 3.3V-compatible control inputs
 2. SSR load side handles AC/DC high voltage - ensure proper isolation
 3. GPIOs selected to avoid conflicts with display (6-10, 13-15) and UART (11-12)
 4. Adjacent GPIO numbers (0,1,3,26) simplify PCB routing
+
+### PCB Wiring Example (per SSR)
+```
+                            OMRON G3MB-202P
++5V ──────────────────────► [+] Control Input
+                            [-] Control Input ──► ESP32 GPIO (0, 1, 3, or 26)
+
+GND ───────────────────────────────────────────► Ground
+```
+
+When GPIO = LOW (0V): Current flows (+5V → SSR LED → GPIO), SSR conducts → **Relay ON**
+When GPIO = HIGH (3.3V): Insufficient voltage (1.7V) across LED → **Relay OFF**
+On boot/reset: GPIO defaults HIGH → All relays safe (OFF)
 
 ---
 

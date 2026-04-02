@@ -268,35 +268,39 @@ void app_main(void) {
 		// Main task can now suspend - LVGL runs in its own task
 		ESP_LOGI(TAG, "Main initialization complete. Main task suspending.");
 
-		// Optional: Add application logic here or just suspend
-		uint32_t last_sensor_read = 0;
-		while (1) {
-				// Main task suspended, other tasks (LVGL, WiFi, etc.) continue running
-				poll_factory_reset_button_runtime();
+	// Wait for sensor to stabilize before first read (SHT45 needs ~1s warm-up)
+	vTaskDelay(pdMS_TO_TICKS(1500));
 
-				// Read sensor every 5 seconds
-				uint32_t now = esp_timer_get_time() / 1000000;  // Convert to seconds
-				if (now - last_sensor_read >= 5) {
-						float temp, humidity;
-						esp_err_t read_ret = sht45_read(&temp, &humidity);
-						if (read_ret == ESP_OK) {
-								float temp_converted = temp_to_user_unit(temp);
-								const char* unit = user_settings_get_temp_unit_symbol();
-								bool is_celsius = (user_settings_get_temp_unit() == TEMP_UNIT_CELSIUS);
+	// Optional: Add application logic here or just suspend
+	uint32_t last_sensor_read = 0;
+	bool first_read_done = false;
 
-								// Update display
-								#if DISPLAY_ENABLED
-								display_ui_update_sensor(temp_converted, humidity, is_celsius);
-								#endif
+	while (1) {
+		// Main task suspended, other tasks (LVGL, WiFi, etc.) continue running
+		poll_factory_reset_button_runtime();
 
-								// Log to serial
-								ESP_LOGI(TAG, "┌─────────────────────────────────┐");
-								ESP_LOGI(TAG, "│ Temperature: %6.2f %-2s          │", temp_converted, unit);
-								ESP_LOGI(TAG, "│ Humidity:   %6.1f %%            │", humidity);
-								ESP_LOGI(TAG, "└─────────────────────────────────┘");
-						} else {
-								ESP_LOGE(TAG, "Failed to read SHT45 sensor: %s", esp_err_to_name(read_ret));
-								ESP_LOGE(TAG, "Check wiring: DevKit uses GPIO 5 (SCL) and GPIO 4 (SDA)");
+		// Read sensor immediately on first iteration, then every 5 seconds
+		uint32_t now = esp_timer_get_time() / 1000000;  // Convert to seconds
+		if (!first_read_done || (now - last_sensor_read >= 5)) {
+			float temp, humidity;
+			esp_err_t read_ret = sht45_read(&temp, &humidity);
+			if (read_ret == ESP_OK) {
+				float temp_converted = temp_to_user_unit(temp);
+				const char* unit = user_settings_get_temp_unit_symbol();
+				bool is_celsius = (user_settings_get_temp_unit() == TEMP_UNIT_CELSIUS);
+
+				// Update display
+				#if DISPLAY_ENABLED
+				display_ui_update_sensor(temp_converted, humidity, is_celsius);
+				#endif
+
+				// Log to serial
+				ESP_LOGI(TAG, "┌─────────────────────────────────┐");
+				ESP_LOGI(TAG, "│ Temperature: %6.2f %-2s          │", temp_converted, unit);
+				ESP_LOGI(TAG, "│ Humidity:   %6.1f %%            │", humidity);
+				ESP_LOGI(TAG, "└─────────────────────────────────┘");
+
+				first_read_done = true;
 						}
 						last_sensor_read = now;
 				}

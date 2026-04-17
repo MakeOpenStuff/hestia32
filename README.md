@@ -1,7 +1,7 @@
-# Hestia32 Firmware
+# Hestia32
 
-[![Build Status](https://github.com/MakeOpenStuff/hestia32-firmware/actions/workflows/build.yml/badge.svg)](https://github.com/MakeOpenStuff/hestia32-firmware/actions/workflows/build.yml)
-[![Tests](https://github.com/MakeOpenStuff/hestia32-firmware/actions/workflows/build.yml/badge.svg?event=push)](https://github.com/MakeOpenStuff/hestia32-firmware/actions)
+[![Build Status](https://github.com/MakeOpenStuff/hestia32/actions/workflows/build.yml/badge.svg)](https://github.com/MakeOpenStuff/hestia32/actions/workflows/build.yml)
+[![Tests](https://github.com/MakeOpenStuff/hestia32/actions/workflows/build.yml/badge.svg?event=push)](https://github.com/MakeOpenStuff/hestia32/actions)
 
 ESP32 firmware with WiFi provisioning, OTA updates, ILI9488 display, resistive touch and factory reset support.
 
@@ -56,8 +56,8 @@ The Boost feature allows users to temporarily override normal thermostat logic f
 
 ```bash
 # Clone with submodules
-git clone --recursive https://github.com/your-username/hestia32-firmware.git
-cd hestia32-firmware
+git clone --recursive https://github.com/your-username/hestia32.git
+cd hestia32
 
 # Or if you already cloned without --recursive:
 git submodule update --init --recursive
@@ -279,7 +279,7 @@ Edit `src/config.h` to customize:
 ## Project Structure //TODO: Needs update
 
 ```
-hestia32-firmware/
+hestia32/
 ├── src/
 │   ├── main.c              # Main application
 │   ├── wifi_manager.c      # WiFi connection management

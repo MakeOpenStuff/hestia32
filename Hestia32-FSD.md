@@ -973,7 +973,7 @@ board_build.partitions = partitions_two_ota.csv
 
 ```bash
 # Clone with submodules
-git clone --recursive https://github.com/your-username/hestia32.git
+git clone --recursive https://github.com/MakeOpenStuff/hestia32.git
 cd hestia32
 
 # If already cloned without --recursive:
@@ -1659,7 +1659,7 @@ gcc -Wall -Wextra -std=c11 -I. src/thermostat.c tests/test_thermostat.c -o test_
 **Community Resources:**
 - ESP32 Forum: https://esp32.com/
 - LVGL Forum: https://forum.lvgl.io/
-- GitHub Issues: https://github.com/your-username/hestia32/issues
+- GitHub Issues: https://github.com/MakeOpenStuff/hestia32/issues
 
 ---
 

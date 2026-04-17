@@ -56,7 +56,7 @@ The Boost feature allows users to temporarily override normal thermostat logic f
 
 ```bash
 # Clone with submodules
-git clone --recursive https://github.com/your-username/hestia32.git
+git clone --recursive https://github.com/MakeOpenStuff/hestia32.git
 cd hestia32
 
 # Or if you already cloned without --recursive:

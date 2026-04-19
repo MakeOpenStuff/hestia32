@@ -376,4 +376,9 @@ If thermostat tests fail:
 
 ## License
 
-This project is open source. See LICENSE file for details.
+This project uses a dual-license model:
+
+- **Code and firmware** (e.g. `src/`, `components/`, build scripts) are licensed under **GNU General Public License v3.0 (GPL-3.0)**. See `LICENSE`.
+- **Documentation and hardware artifacts** (e.g. `*.md`, `pcb/`, schematics, manufacturing outputs, media) are licensed under **Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)**. See `LICENSE-CC-BY-SA-4.0.md`.
+
+Third-party dependencies keep their own licenses.

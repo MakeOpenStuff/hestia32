@@ -20,9 +20,17 @@ Resulting variants:
 
 ## History
 
-- `v1.0`: first complete PCB design release for the Hestia32 XIAO variant.
+- `v1.1`:
+  - Fix I2C pull up resistors
+  - Renumerate components prefixes without gaps
+  - Add unpopulated additional GPIOs pins from port expander (P07)
+  - Increase clearance around holes in case user uses large metal screw or washer
+  - Add extra information on top silkscreen
+- `v1.0`:
+  - First complete PCB design release for the Hestia32 XIAO variant.
 
 ## TODO (Future Improvements)
 
-- [ ] Add unpopulated additional GPIOs pins from port expander
-- [ ] Increase clearance around holes in case user uses large metal screw or washer
+- [x] Renumber components prefixes without gaps
+- [x] Add unpopulated additional GPIOs pins from port expander
+- [x] Increase clearance around holes in case user uses large metal screw or washer

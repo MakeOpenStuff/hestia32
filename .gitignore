@@ -3,7 +3,6 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
-tests/
 logs/
 build/
 test_thermostat

@@ -133,19 +133,19 @@ source ~/esp/esp-idf-v5.5/export.sh
 idf.py set-target esp32c5
 
 # Build firmware
-idf.py --preview build
+idf.py build
 
 # Erase flash (removes all data including WiFi credentials)
-idf.py --preview -p /dev/ttyUSB0 erase-flash
+idf.py -p /dev/ttyUSB0 erase-flash
 
 # Flash firmware
-idf.py --preview -p /dev/ttyUSB0 flash
+idf.py -p /dev/ttyUSB0 flash
 
 # Monitor serial output
-idf.py --preview -p /dev/ttyUSB0 monitor
+idf.py -p /dev/ttyUSB0 monitor
 
 # Flash and monitor in one command
-idf.py --preview -p /dev/ttyUSB0 flash monitor
+idf.py -p /dev/ttyUSB0 flash monitor
 ```
 
 **Note:** Replace `/dev/ttyUSB0` with your actual serial port (e.g., `/dev/ttyACM0`, `COM3` on Windows, `/dev/cu.usbserial-*` on macOS). Also prefer the (upper) port labelled UART (avoid USB or Native).
@@ -310,8 +310,8 @@ source ~/esp/esp-idf-v5.5/export.sh
 - Make sure you're using ESP-IDF v5.5.1 or later
 - ESP32-C5 support is incomplete in earlier versions
 
-**Error: `--preview` flag required**
-- ESP32-C5 is still in preview, always use `--preview` flag with `idf.py` commands
+**Error: unexpected command options**
+- Use plain `idf.py` commands with no extra preview options
 
 ### Serial Port Not Found
 

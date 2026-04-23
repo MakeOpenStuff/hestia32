@@ -1,8 +1,8 @@
 # Hestia32 Firmware - Functional Specification Document (FSD)
 
-**Document Version:** 1.0
-**Firmware Version:** 1.0.0
-**Date:** January 14, 2026
+**Document Version:** 1.1
+**Firmware Version:** 0.8.4
+**Date:** April 23, 2026
 
 ---
 
@@ -33,7 +33,7 @@ Hestia32 is an ESP32-based firmware platform designed for IoT applications with 
 - Web-based WiFi provisioning (captive portal)
 - Secure OTA firmware updates with dual partition support
 - LVGL-driven graphical UI with touch calibration
-- Advanced multi-stage thermostat control logic (planned)
+- Advanced multi-stage thermostat control logic
 - Factory reset capability via BOOT button
 - NVS-based persistent storage for credentials and calibration
 - Support for ESP32 (original) and ESP32-C5 (RISC-V)
@@ -76,42 +76,27 @@ Hestia32 provides a complete firmware solution for ESP32-based smart home device
 ### 3.1 High-Level Architecture
 
 ```
-┌────────────────────────────────────────────────────────┐
-│                     Application Layer                  │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │   Main App   │  │  Display UI  │  │  Thermostat  │  │
-│  │   (main.c)   │  │              │  │              │  │
-│  └──────────────┘  └──────────────┘  └──────────────┘  │
-└────────────────────────────────────────────────────────┘
-                           │
-┌────────────────────────────────────────────────────────┐
-│                   Service Layer                        │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │ WiFi Manager │  │ OTA Manager  │  │   Display    │  │
-│  │              │  │              │  │   Manager    │  │
-│  └──────────────┘  └──────────────┘  └──────────────┘  │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │         WiFi Provisioning Module                 │  │
-│  │  (Web Server + Captive Portal + DNS Server)      │  │
-│  └──────────────────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────┘
-                           │
-┌────────────────────────────────────────────────────────┐
-│                    Hardware Abstraction Layer          │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │   ESP WiFi   │  │  SPI Master  │  │   GPIO/PWM   │  │
-│  │     Stack    │  │              │  │              │  │
-│  └──────────────┘  └──────────────┘  └──────────────┘  │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │  LCD Driver  │  │Touch Driver  │  │    NVS       │  │
-│  │  (ILI9488)   │  │  (XPT2046)   │  │   Storage    │  │
-│  └──────────────┘  └──────────────┘  └──────────────┘  │
-└────────────────────────────────────────────────────────┘
-                           │
-┌────────────────────────────────────────────────────────┐
-│                    FreeRTOS + ESP-IDF                  │
-│              Task Scheduling | Memory Management       │
-└────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────┐
+│                    Application Layer                       │
+│   main.c | UI update loop | sensor polling | runtime reset │
+└────────────────────────────────────────────────────────────┘
+                             │
+┌────────────────────────────────────────────────────────────┐
+│                      Core Layer                            │
+│ display_manager | display_ui | thermostat | relay_manager  │
+│ sensor_sht45 | user_settings | protocol_manager            │
+└────────────────────────────────────────────────────────────┘
+                             │
+┌────────────────────────────────────────────────────────────┐
+│                    Protocol Layer                          │
+│ MQTT (implemented) | Zigbee (stub) | Matter (stub)         │
+│ WiFi provisioning and OTA are under protocols/mqtt         │
+└────────────────────────────────────────────────────────────┘
+                             │
+┌────────────────────────────────────────────────────────────┐
+│                  ESP-IDF + Hardware                        │
+│ WiFi | NVS | SPI | I2C | GPIO | FreeRTOS | LCD/Touch       │
+└────────────────────────────────────────────────────────────┘
 ```
 
 ### 3.2 Boot Sequence
@@ -119,9 +104,7 @@ Hestia32 provides a complete firmware solution for ESP32-based smart home device
 ```
 1. Power On / Reset
    └─> NVS Initialization
-       └─> Factory Reset Check (BOOT button held?)
-           ├─> Yes: Erase NVS → Restart
-           └─> No: Continue
+       └─> Continue boot (factory reset is handled at runtime via BOOT long-press)
 
 2. Touch Calibration Check
    └─> Has calibration data in NVS?
@@ -147,7 +130,7 @@ Hestia32 provides a complete firmware solution for ESP32-based smart home device
        └─> Mark as valid if pending
 
 7. Main Loop
-   └─> Application logic (LVGL task handles UI updates)
+   └─> Application logic (sensor polling + runtime BOOT long-press reset)
 ```
 
 ### 3.3 Task Priority Structure
@@ -186,6 +169,10 @@ Hestia32 provides a complete firmware solution for ESP32-based smart home device
 
 ### 4.2 Pin Mapping (ESP32-C5)
 
+Pin mapping is board-profile dependent and selected through Kconfig (`CONFIG_BOARD_TYPE_DEVKIT` or `CONFIG_BOARD_TYPE_XIAO`).
+
+**ESP32-C5 DevKit Profile**
+
 | Function | GPIO | Notes |
 |----------|------|-------|
 | **Display SPI** |||
@@ -199,17 +186,43 @@ Hestia32 provides a complete firmware solution for ESP32-based smart home device
 | T_CS | 14 | Touch chip select |
 | T_DIN | 7 | Shared MOSI |
 | T_CLK | 6 | Shared SCLK |
-| T_DO (MISO) | 2 | **Dedicated** (display MISO disconnected) |
+| T_DO (MISO) | 2 | Dedicated (display MISO disconnected) |
 | T_PEN (IRQ) | 15 | Active low pen detect |
-| **System** |||
-| BOOT Button | 28 | Factory reset (hold 5s on boot) |
-| UART0 TX | 11 | **Reserved** (do not use) |
-| UART0 RX | 12 | **Reserved** (do not use) |
+| **I2C** |||
+| SCL | 4 | SHT45 on DevKit profile |
+| SDA | 5 | SHT45 on DevKit profile |
+
+**XIAO ESP32-C5 Profile**
+
+| Function | GPIO | Notes |
+|----------|------|-------|
+| **Display SPI** |||
+| MOSI (SDI) | 10 | Shared with touch |
+| SCLK | 8 | Shared with touch |
+| CS | 7 | Display chip select |
+| DC (RS) | 1 | Data/Command select |
+| RESET | 25 | Hardware reset |
+| Backlight | 0 | PWM capable |
+| **Touch SPI** |||
+| T_CS | 12 | Touch chip select |
+| T_DIN | 10 | Shared MOSI |
+| T_CLK | 8 | Shared SCLK |
+| T_DO (MISO) | 9 | Touch MISO |
+| T_PEN (IRQ) | 11 | Active low pen detect |
+| **I2C** |||
+| SCL | 24 | TCA9555 + SHT45 |
+| SDA | 23 | TCA9555 + SHT45 |
+
+**System (Both Profiles)**
+
+| Function | GPIO | Notes |
+|----------|------|-------|
+| BOOT Button | 28 | Runtime factory reset (hold 5s while running) |
 
 **Critical Notes:**
 - Display SDO/MISO **must remain disconnected**; GPIO 2 is dedicated to touch controller
-- GPIO 11/12 reserved for UART0 (serial console)
 - SPI2_HOST used for both display and touch (different CS pins)
+- XIAO and DevKit use different GPIO maps; do not cross-wire between profiles
 
 ### 4.3 Power Requirements
 
@@ -222,8 +235,7 @@ Hestia32 provides a complete firmware solution for ESP32-based smart home device
 
 **SHT45 Temperature & Humidity Sensor:**
 - Interface: I2C (address 0x44)
-- SCL: GPIO 4
-- SDA: GPIO 5
+- SCL/SDA: GPIO 4/5 (DevKit), GPIO 24/23 (XIAO)
 - Accuracy: ±0.1°C, ±1% RH
 - Range: -40°C to 125°C, 0-100% RH
 - Power: 0.4µA (sleep), 800µA (measurement)
@@ -263,7 +275,7 @@ For NodeMCU-32S boards using PlatformIO, pin assignments differ. Refer to `displ
 **Description:** User shall be able to erase all stored settings and return device to provisioning mode.
 
 **Acceptance Criteria:**
-1. Hold BOOT button during power-on/reset
+1. Hold BOOT button while firmware is running
 2. Continue holding for 5 seconds
 3. System erases NVS (WiFi credentials + touch calibration)
 4. Device restarts in provisioning mode
@@ -348,7 +360,7 @@ For NodeMCU-32S boards using PlatformIO, pin assignments differ. Refer to `displ
 8. Mutual exclusion: heating and cooling never active simultaneously
 9. Emergency shutdown on sensor failure
 
-**Dependencies:** Temperature/humidity sensors (future hardware)
+**Dependencies:** Temperature/humidity input source and relay/output routing
 
 ---
 
@@ -373,7 +385,7 @@ For NodeMCU-32S boards using PlatformIO, pin assignments differ. Refer to `displ
 
 ### 6.1 WiFi Provisioning Module
 
-**Files:** `wifi_provisioning.c/h`, `provisioning_html.h`
+**Files:** `src/protocols/mqtt/wifi_provisioning.c/h`, `src/protocols/mqtt/provisioning_html.h`
 
 **Responsibilities:**
 - Create WiFi AP (SSID: "HESTIA32", open network)
@@ -418,7 +430,7 @@ typedef struct {
 
 ### 6.2 WiFi Manager Module
 
-**Files:** `wifi_manager.c/h`
+**Files:** `src/protocols/mqtt/wifi_manager.c/h`
 
 **Responsibilities:**
 - Initialize ESP WiFi stack (STA mode)
@@ -442,7 +454,7 @@ void wifi_disconnect(void);
 
 ### 6.3 OTA Manager Module
 
-**Files:** `ota_manager.c/h`
+**Files:** `src/protocols/mqtt/ota_manager.c/h`
 
 **Responsibilities:**
 - Verify current boot partition
@@ -478,7 +490,7 @@ ota_1     | 0x1F0000| 1.8MB  | Secondary firmware
 
 ### 6.4 Display Manager Module
 
-**Files:** `display_manager.cpp/h`, `display_config.h`
+**Files:** `src/core/display_manager.cpp/h`, `src/core/display_config.h`
 
 **Responsibilities:**
 - Initialize ILI9488 LCD via SPI (write-only, 40MHz)
@@ -501,7 +513,7 @@ void display_clear_screen(void);
 ```
 
 **LVGL Configuration:**
-- Double buffering (80 line height each)
+- Double buffering (board-dependent buffer height)
 - RGB565 color mode
 - SPI DMA transfer
 - Tick period: 2ms
@@ -527,7 +539,7 @@ XPT2046 raw (0-4095) → Apply calibration clamp → Map to 0-319 / 0-479
 
 ### 6.5 Display UI Module
 
-**Files:** `display_ui.cpp/h`
+**Files:** `src/core/display_ui.cpp/h`
 
 **Responsibilities:**
 - Create provisioning mode UI (simple text instructions)
@@ -539,6 +551,7 @@ XPT2046 raw (0-4095) → Apply calibration clamp → Map to 0-319 / 0-479
 void display_ui_create_provisioning(lv_obj_t *scr);
 void display_ui_create_main(lv_obj_t *scr, lv_obj_t **touch_dot,
                            volatile uint32_t *flush_count);
+void display_ui_update_sensor(float temperature, float humidity, bool is_celsius);
 ```
 
 **Provisioning UI:**
@@ -557,7 +570,7 @@ void display_ui_create_main(lv_obj_t *scr, lv_obj_t **touch_dot,
 
 ### 6.6 Thermostat Module (Future Integration)
 
-**Files:** `thermostat.c/h`
+**Files:** `src/core/thermostat.c/h`
 
 **Status:** Module complete, comprehensive tests pass, not integrated into main.c
 
@@ -621,7 +634,7 @@ float thermostat_c_to_f(float celsius);
 float thermostat_f_to_c(float fahrenheit);
 ```
 
-**Test Coverage:** 22 comprehensive tests including:
+**Test Coverage:** 24 comprehensive tests including:
 - Configuration validation
 - Hysteresis protection
 - Comfort/Eco deadbands
@@ -631,6 +644,7 @@ float thermostat_f_to_c(float fahrenheit);
 - Fan timing (pre-run, post-run, manual override)
 - HVAC system integration scenarios
 - Open window detection
+- Boost feature scenarios and edge cases
 - 24-hour simulation
 
 **Safety Features:**
@@ -1038,14 +1052,14 @@ idf.py menuconfig
 **Method 3: Check current protocol**
 
 ```bash
-grep "CONFIG_HESTIA32_PROTOCOL" sdkconfig
+grep "CONFIG_PROTOCOL_" sdkconfig
 ```
 
 Expected output for MQTT:
 ```
-CONFIG_HESTIA32_PROTOCOL_MQTT=y
-# CONFIG_HESTIA32_PROTOCOL_ZIGBEE is not set
-# CONFIG_HESTIA32_PROTOCOL_MATTER is not set
+CONFIG_PROTOCOL_MQTT=y
+# CONFIG_PROTOCOL_ZIGBEE is not set
+# CONFIG_PROTOCOL_MATTER is not set
 ```
 
 #### Protocol-Specific Build Components
@@ -1084,10 +1098,10 @@ idf.py build
 source ~/esp/esp-idf-v5.5/export.sh
 
 # Build firmware (uses default protocol from sdkconfig)
-idf.py --preview build
+idf.py build
 
 # Or specify protocol explicitly
-idf.py -D SDKCONFIG_DEFAULTS=sdkconfig.mqtt --preview build
+idf.py -D SDKCONFIG_DEFAULTS=sdkconfig.mqtt build
 
 # View build output
 ls build/hestia32.bin
@@ -1104,19 +1118,19 @@ ls build/hestia32.bin
 **Full flash (first time):**
 
 ```bash
-idf.py --preview -p /dev/ttyACM0 flash
+idf.py -p /dev/ttyACM0 flash
 ```
 
 **Application only (faster):**
 
 ```bash
-idf.py --preview -p /dev/ttyACM0 app-flash
+idf.py -p /dev/ttyACM0 app-flash
 ```
 
 **Erase everything:**
 
 ```bash
-idf.py --preview -p /dev/ttyACM0 erase-flash
+idf.py -p /dev/ttyACM0 erase-flash
 ```
 
 **Serial port detection:**
@@ -1142,10 +1156,10 @@ pio device monitor
 **ESP-IDF:**
 
 ```bash
-idf.py --preview -p /dev/ttyACM0 monitor
+idf.py -p /dev/ttyACM0 monitor
 
 # Or combined flash + monitor:
-idf.py --preview -p /dev/ttyACM0 flash monitor
+idf.py -p /dev/ttyACM0 flash monitor
 ```
 
 **PlatformIO:**
@@ -1158,10 +1172,9 @@ pio device monitor -b 115200
 
 ```
 I (123) main: Hestia32 ESP32-C5 Application
-I (125) main: Firmware Version: 1.0.0
+I (125) main: Firmware Version: 0.8.4
 I (130) main: NVS initialized
-I (135) main: Checking BOOT button on GPIO 28...
-I (140) main: BOOT button GPIO 28 level: 1 (released)
+I (135) main: Factory reset: hold BOOT for 5 seconds while running
 I (145) display: No calibration found - running wizard first
 I (150) display: Starting touch calibration (60 second timeout)
 I (155) display: Touch target 1/5 (60s remaining)
@@ -1183,11 +1196,11 @@ I (155) display: Touch target 1/5 (60s remaining)
 make test
 
 # Manual
-gcc -Wall -Wextra -std=c11 -I. src/thermostat.c tests/test_thermostat.c -o test_thermostat -lm
+gcc -Wall -Wextra -std=c11 -I. src/core/thermostat.c tests/test_thermostat.c -o test_thermostat -lm
 ./test_thermostat
 ```
 
-**Test Suite:** 22 comprehensive tests
+**Test Suite:** 24 comprehensive tests
 
 1. Configuration validation
 2. Hysteresis protection (prevents rapid switching)
@@ -1211,6 +1224,8 @@ gcc -Wall -Wextra -std=c11 -I. src/thermostat.c tests/test_thermostat.c -o test_
 20. Open window detection (2°C drop over 3 minutes)
 21. Open window false positive prevention
 22. 24-hour heating cycle simulation
+23. Boost functionality
+24. Boost edge cases
 
 **Output:**
 ```
@@ -1218,13 +1233,13 @@ gcc -Wall -Wextra -std=c11 -I. src/thermostat.c tests/test_thermostat.c -o test_
 Testing: thermostat_config_validate() with various invalid configs
 ✓ PASSED: Configuration Validation
 
-=== TEST 22: 24-Hour Heating Cycle Simulation ===
-Simulating 24 hours (86400 seconds)...
-✓ PASSED: 24-Hour Heating Cycle Simulation
+=== TEST 24: Boost Feature - Comprehensive Edge Cases ===
+...
+✓ PASSED: Boost Feature - Comprehensive Edge Cases
 
 === SUMMARY ===
-Total Tests: 22
-Passed: 22
+Total Tests: 24
+Passed: 24
 Failed: 0
 Success Rate: 100.00%
 ```
@@ -1253,22 +1268,22 @@ Success Rate: 100.00%
 **Test 3: Factory Reset**
 1. Provision device with WiFi
 2. Calibrate touchscreen
-3. Power off
-4. Hold BOOT button, power on
-5. Hold for 3+ seconds
+3. Keep device running in normal mode
+4. Hold BOOT button for 5+ seconds
+5. Release after confirmation message
 6. Verify "Factory reset confirmed!" in logs
 7. Verify device enters provisioning mode
 8. Verify calibration wizard runs
 
 **Test 4: OTA Update**
-1. Build firmware v1.0.0
+1. Build firmware v0.8.4
 2. Flash to device
-3. Build firmware v1.0.1 (increment APP_VERSION)
-4. Upload v1.0.1 to HTTPS server
+3. Build firmware v0.8.5 (increment APP_VERSION)
+4. Upload v0.8.5 to HTTPS server
 5. Configure OTA URL via provisioning
 6. Trigger update (manual or automatic)
 7. Verify update completes
-8. Verify device boots v1.0.1
+8. Verify device boots v0.8.5
 9. Check logs for "OTA update successful"
 
 **Test 5: Display Performance**
@@ -1443,20 +1458,31 @@ Success Rate: 100.00%
 hestia32/
 ├── src/                          # Source code
 │   ├── main.c                    # Application entry point
-│   ├── config.h                  # Configuration constants
-│   ├── wifi_manager.c/h          # WiFi connection management
-│   ├── wifi_provisioning.c/h     # Web-based provisioning
-│   ├── provisioning_html.h       # Embedded HTML template
-│   ├── ota_manager.c/h           # OTA update handling
-│   ├── display_manager.cpp/h     # Display and touch drivers
-│   ├── display_config.h          # Display pin configuration
-│   ├── display_ui.cpp/h          # LVGL UI creation
-│   ├── thermostat.c/h            # Thermostat control logic
-│   └── CMakeLists.txt            # Build configuration
-├── tests/                        # Test suite
-│   └── power_test.c/h            # Power consumption tests
-│   ├── rgb_led_test.c/h          # RGB LED tests
-│   └── test_thermostat.c         # Thermostat unit tests
+│   ├── CMakeLists.txt            # Build configuration
+│   ├── Kconfig.projbuild         # Board/protocol selection
+│   ├── core/                     # Protocol-agnostic core modules
+│   │   ├── core_config.h
+│   │   ├── display_config.h
+│   │   ├── display_manager.cpp/h
+│   │   ├── display_ui.cpp/h
+│   │   ├── protocol_manager.c/h
+│   │   ├── relay_manager.c/h
+│   │   ├── sensor_sht45.c/h
+│   │   ├── thermostat.c/h
+│   │   └── user_settings.c/h
+│   └── protocols/                # Protocol implementations
+│       ├── protocol_interface.h
+│       ├── mqtt/                 # Implemented stack
+│       ├── zigbee/               # Stub
+│       └── matter/               # Stub
+├── tests/                        # Test suite and diagnostics
+│   ├── power_test.c/h
+│   ├── sensor_test.c/h
+│   ├── rgb_led_test.c/h
+│   ├── i2c_scanner.c/h
+│   ├── test_thermostat.c
+│   ├── test_blink/               # Standalone ESP-IDF test app
+│   └── test_i2c_scanner/         # Standalone ESP-IDF test app
 ├── components/                   # External components
 │   ├── esp_lcd_ili9488/          # ILI9488 display driver
 │   └── lvgl/                     # LVGL library (submodule)
@@ -1475,7 +1501,7 @@ hestia32/
 
 ### Appendix C: Key Configuration Parameters
 
-**File:** `src/config.h`
+**File:** `src/core/core_config.h`
 
 | Parameter | Default Value | Description |
 |-----------|---------------|-------------|
@@ -1484,19 +1510,19 @@ hestia32/
 | FACTORY_RESET_GPIO | 28 (C5) / 0 (ESP32) | BOOT button GPIO |
 | WIFI_MAX_RETRY | 5 | WiFi connection retry count |
 | OTA_CHECK_INTERVAL_MS | 300000 | OTA check interval (5 min) |
-| APP_VERSION | "1.0.0" | Firmware version string |
+| APP_VERSION | "0.8.4" | Firmware version string |
 | LOOP_DELAY_MS | 10000 | Main loop delay (deprecated) |
 
-**File:** `src/display_config.h`
+**File:** `src/core/display_config.h`
 
 | Parameter | Value | Description |
 |-----------|-------|-------------|
 | TFT_WIDTH | 320 | Display width (pixels) |
 | TFT_HEIGHT | 480 | Display height (pixels) |
-| LCD_PIXEL_CLOCK_HZ | 20MHz | SPI clock (display) |
+| LCD_PIXEL_CLOCK_HZ | 20MHz (DevKit) / 8MHz (XIAO) | SPI clock (display) |
 | TOUCH_SPEED | 1MHz | SPI clock (touch) |
 | LVGL_TICK_PERIOD_MS | 2 | LVGL tick rate |
-| LVGL_BUFFER_HEIGHT | 80 | Line buffer height |
+| LVGL_BUFFER_HEIGHT | 80 (DevKit) / 40 (XIAO) | Line buffer height |
 
 ### Appendix D: Useful Commands Reference
 
@@ -1507,24 +1533,24 @@ hestia32/
 source ~/esp/esp-idf-v5.5/export.sh
 
 # Build commands
-idf.py --preview build                    # Build firmware
-idf.py --preview clean                    # Clean build
-idf.py --preview fullclean                # Full clean (includes config)
-idf.py --preview menuconfig               # Configuration menu
+idf.py build                    # Build firmware
+idf.py clean                    # Clean build
+idf.py fullclean                # Full clean (includes config)
+idf.py menuconfig               # Configuration menu
 
 # Flashing
-idf.py --preview -p PORT flash            # Flash all
-idf.py --preview -p PORT app-flash        # Flash app only
-idf.py --preview -p PORT erase-flash      # Erase everything
+idf.py -p PORT flash            # Flash all
+idf.py -p PORT app-flash        # Flash app only
+idf.py -p PORT erase-flash      # Erase everything
 
 # Monitoring
-idf.py --preview -p PORT monitor          # Serial monitor
-idf.py --preview -p PORT flash monitor    # Flash + monitor
+idf.py -p PORT monitor          # Serial monitor
+idf.py -p PORT flash monitor    # Flash + monitor
 
 # Size analysis
-idf.py --preview size                     # Show binary sizes
-idf.py --preview size-components          # Size by component
-idf.py --preview size-files               # Size by file
+idf.py size                     # Show binary sizes
+idf.py size-components          # Size by component
+idf.py size-files               # Size by file
 ```
 
 **PlatformIO (ESP32):**
@@ -1554,7 +1580,7 @@ make test                                 # Run all tests
 make clean                                # Clean test build
 
 # Manual test build
-gcc -Wall -Wextra -std=c11 -I. src/thermostat.c tests/test_thermostat.c -o test_thermostat -lm
+gcc -Wall -Wextra -std=c11 -I. src/core/thermostat.c tests/test_thermostat.c -o test_thermostat -lm
 ./test_thermostat
 ```
 
@@ -1627,8 +1653,9 @@ gcc -Wall -Wextra -std=c11 -I. src/thermostat.c tests/test_thermostat.c -o test_
 **Solution:**
 1. Verify BOOT button GPIO matches hardware (28 for C5, 0 for ESP32)
 2. Check button actually pulls GPIO low (test with multimeter)
-3. Increase hold time (currently 5 seconds)
-4. Check serial logs for "BOOT button level: 0"
+3. Hold button while firmware is running (not only during power-on)
+4. Increase hold time (currently 5 seconds)
+5. Check serial logs for runtime hold progress/confirmation
 
 ---
 
@@ -1668,6 +1695,7 @@ gcc -Wall -Wextra -std=c11 -I. src/thermostat.c tests/test_thermostat.c -o test_
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | Initial | Original | Initial FSD with comprehensive analysis, actual implementation details, thermostat specification, testing strategy |
+| 1.1 | 2026-04-23 | Updated | Synced with current code layout (`src/core` + `src/protocols`), board-specific pin mappings, runtime factory reset behavior, 24-test thermostat suite, and current ESP-IDF command usage |
 
 ---
 

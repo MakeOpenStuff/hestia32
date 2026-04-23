@@ -5,7 +5,6 @@
 .vscode/ipch
 logs/
 build/
-test_thermostat
 dependencies.lock
 
 # ESP-IDF generated config (do not commit)

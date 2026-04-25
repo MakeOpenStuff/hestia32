@@ -1,8 +1,8 @@
 # Hestia32 Firmware - Functional Specification Document (FSD)
 
-**Document Version:** 1.1
-**Firmware Version:** 0.8.4
-**Date:** April 23, 2026
+**Document Version:** 1.2
+**Firmware Version:** 0.9.0
+**Date:** April 25, 2026
 
 ---
 
@@ -1696,6 +1696,7 @@ gcc -Wall -Wextra -std=c11 -I. src/core/thermostat.c tests/test_thermostat.c -o 
 |---------|------|--------|---------|
 | 1.0 | Initial | Original | Initial FSD with comprehensive analysis, actual implementation details, thermostat specification, testing strategy |
 | 1.1 | 2026-04-23 | Updated | Synced with current code layout (`src/core` + `src/protocols`), board-specific pin mappings, runtime factory reset behavior, 24-test thermostat suite, and current ESP-IDF command usage |
+| 1.2 | 2026-04-25 | Release Prep | Bumped firmware to v0.9.0 for public release; PCB v1.2 finalized; README expanded with HVAC/protocol/variant details |
 
 ---
 

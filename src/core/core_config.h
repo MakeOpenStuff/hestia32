@@ -4,7 +4,7 @@
 #include "sdkconfig.h"
 
 // Application Configuration
-#define APP_VERSION "0.8.4"
+#define APP_VERSION "0.9.0"
 
 // Reset button configuration
 // Set to -1 to disable, or a GPIO number to enable factory reset on boot

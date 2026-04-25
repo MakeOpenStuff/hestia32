@@ -14,19 +14,47 @@ ESP32 firmware with WiFi provisioning, OTA updates, ILI9488 display, resistive t
 
 ## Features
 
-- WiFi provisioning via web interface (AP mode)
-- BT and OTA (Over-The-Air) firmware updates
-- Factory reset via BOOT button
-- NVS storage for WiFi credentials and configuration
-- Advanced thermostat control logic with multi-stage heating/cooling and per-domain Boost feature (heating, cooling, hot water)
-## Boost Feature
+### HVAC Control
+- **Multi-stage thermostat logic** - Separate control for heating, cooling, and hot water domains
+- **Stage 2 support** - Progressive power control with time-delay and deviation thresholds
+- **Comfort and ECO modes** - Adjustable temperature deadbands (±0.5°C comfort, ±1.0°C eco)
+- **Hysteresis protection** - 5-minute delay prevents rapid mode switching
+- **Fan pre/post-run** - Ensures airflow before heating elements activate and distributes residual heat/cool
+- **Open-window detection** - Automatically suspends heating on rapid temperature drops to save energy
 
-The Boost feature allows users to temporarily override normal thermostat logic for heating, cooling, or hot water. When activated, the selected domain runs at maximum output for a user-defined period (countdown), after which normal operation resumes. Only stage 1 is activated for heating/cooling during boost. Each domain has its own independent boost timer and last-used duration, which is user-adjustable.
+### Per-Domain Boost Feature
+- Temporarily override thermostat logic for heating, cooling, or hot water
+- Maximum output for user-defined countdown period
+- Independent boost timer and duration memory per domain
+- Automatic return to normal operation when boost expires
 
-- Configurable node name and OTA server URL
-- LVGL-based graphical interface
-- Automatic touch calibration wizard on first boot
-- Resistive touch input with coordinate mapping
+### Hardware & UI
+- **3.5" ILI9488 Display** (320x480 IPS) with resistive touch (XPT2046)
+- **LVGL-based graphical interface** with smooth animations
+- **Automatic touch calibration** on first boot
+- **Resistive touch coordinate mapping** for accurate input
+- **Configurable sensor input** (SHT45 temperature/humidity)
+- **Relay control** for heating, cooling, hot water, and fan outputs
+
+### Communication & Provisioning
+- **WiFi provisioning** via web interface in AP (access point) mode
+- **OTA (Over-The-Air) firmware updates** with stable/develop channel selection
+- **Multiple protocol support:**
+  - **MQTT** (fully implemented, production-ready)
+  - **Zigbee** (protocol stub, framework ready)
+  - **Matter** (protocol stub, framework ready)
+- **Configurable node name and OTA server URL**
+- **Factory reset** via BOOT button long-press (5 seconds)
+- **NVS persistent storage** for WiFi credentials, calibration, and user settings
+
+### Hardware Variants
+- **ESP32-C5 RISC-V** - Primary target (full support)
+- **Multiple board profiles:**
+  - DevKit (standard GPIO pin assignment)
+  - XIAO (compact form factor, alternative pins)
+- **Regional variants:**
+  - EU (European power levels and configurations)
+  - HVAC (heating/cooling optimized)
 
 ## Prerequisites
 
@@ -278,25 +306,56 @@ Edit `src/config.h` to customize:
 #define APP_VERSION "1.0.0"               // Firmware version
 ```
 
-## Project Structure //TODO: Needs update
+## Project Structure
 
 ```
 hestia32/
 ├── src/
-│   ├── main.c              # Main application
-│   ├── wifi_manager.c      # WiFi connection management
-│   ├── wifi_provisioning.c # Web-based WiFi provisioning
-│   ├── ota_manager.c       # OTA update handling
-│   ├── thermostat.c        # Thermostat control logic
-│   ├── thermostat.h        # Thermostat API definitions
-│   └── config.h            # Configuration constants
+│   ├── main.c                      # Application entry point
+│   ├── core/                       # Core thermostat & hardware functionality
+│   │   ├── core_config.h           # Firmware version and core settings
+│   │   ├── thermostat.c/h          # HVAC control logic (stages, hysteresis, deadbands)
+│   │   ├── relay_manager.c/h       # Heating, cooling, hot water, fan output control
+│   │   ├── sensor_sht45.c/h        # Temperature/humidity sensor interface
+│   │   ├── protocol_manager.c/h    # Protocol abstraction and selection
+│   │   ├── user_settings.c/h       # NVS persistent storage (WiFi, calibration, settings)
+│   │   ├── display_manager.h       # Display abstraction layer
+│   │   ├── display_ui.h            # LVGL UI components and screens
+│   │   └── display_config.h        # Display initialization (ILI9488, XPT2046)
+│   └── protocols/                  # Communication protocol implementations
+│       ├── protocol_interface.h    # Common interface for all protocols
+│       ├── mqtt/                   # MQTT over WiFi (production-ready)
+│       │   ├── mqtt_protocol.c/h   # MQTT client and message handling
+│       │   ├── wifi_manager.c/h    # WiFi connection management
+│       │   ├── wifi_provisioning.c/h # Web-based provisioning (AP mode)
+│       │   ├── ota_manager.c/h     # OTA update checking and flashing
+│       │   ├── mqtt_config.h       # MQTT broker configuration
+│       │   └── provisioning_html.h # Embedded provisioning web UI
+│       ├── zigbee/                 # Zigbee (protocol stub)
+│       │   └── protocol_zigbee.c/h
+│       └── matter/                 # Matter (protocol stub)
+│           └── protocol_matter.c/h
+├── components/
+│   ├── esp_lcd_ili9488/            # ILI9488 display driver
+│   └── lvgl/                       # LVGL graphics library (submodule)
+├── pcb/                            # Hardware designs and manufacturing files
+│   └── README.md                   # PCB revision history and board notes
+├── docs/                           # Technical documentation
+│   ├── display/                    # Display configuration guides
+│   ├── esp32-c5/                   # ESP32-C5 specific documentation
+│   └── sensors/                    # Sensor integration docs
 ├── tests/
-│   └── test_thermostat.c   # Comprehensive thermostat tests
-├── platformio.ini          # PlatformIO configuration (ESP32)
-├── CMakeLists.txt          # ESP-IDF build config (ESP32-C5)
-├── sdkconfig.defaults      # ESP-IDF default settings (ESP32-C5)
-├── Makefile                # Test build automation
-└── setup-c5.sh             # ESP32-C5 environment setup script
+│   ├── test_thermostat.c           # Comprehensive thermostat logic test suite (24 tests)
+│   └── Makefile                    # Test build automation
+├── platformio.ini                  # PlatformIO configuration (ESP32 support)
+├── CMakeLists.txt                  # ESP-IDF build config (ESP32-C5 primary)
+├── sdkconfig.defaults              # ESP-IDF default settings
+├── sdkconfig.mqtt/zigbee/matter    # Protocol-specific SDK configurations
+├── Makefile                        # Build and test automation
+├── setup-c5.sh                     # ESP32-C5 environment setup script
+├── WIRING.md                       # Complete pin mapping for all board variants
+├── Hestia32-FSD.md                 # Functional specification document
+└── README.md                       # This file
 ```
 
 ## Troubleshooting

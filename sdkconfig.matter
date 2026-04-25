@@ -1,0 +1,28 @@
+# Hestia32 Matter Protocol Configuration
+# Use this preset: idf.py -D SDKCONFIG_DEFAULTS=sdkconfig.matter build
+# NOTE: Matter support is not yet implemented - this is a placeholder
+
+CONFIG_IDF_TARGET="esp32c5"
+
+# Flash Size
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+
+# Protocol Selection
+CONFIG_HESTIA32_PROTOCOL_MATTER=y
+CONFIG_PROTOCOL_MATTER=y
+
+# Matter Configuration (future)
+# CONFIG_ENABLE_CHIP=y
+# CONFIG_CHIP_PROJECT_CONFIG="matter_config.h"
+
+# WiFi Configuration (Matter over WiFi)
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=10
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=32
+CONFIG_ESP_WIFI_TX_BUFFER_TYPE=1
+CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=32
+CONFIG_ESP_WIFI_ENABLED=y
+
+# Partition Table
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_two_ota.csv"

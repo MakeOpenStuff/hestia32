@@ -1,0 +1,4 @@
+# Build outputs for standalone test projects
+*/build/
+*/sdkconfig
+*/sdkconfig.old

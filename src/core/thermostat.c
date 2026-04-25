@@ -1,0 +1,657 @@
+/**
+ * @file thermostat.c
+ * @brief Thermostat control logic with multi-stage heating/cooling
+ *
+ * NOTE: This module is not currently integrated into main.c
+ *       It will be used in future releases for HVAC control
+ */
+
+#include "thermostat.h"
+#include <string.h>
+
+// ============================================================================
+// PRIVATE HELPERS
+// ============================================================================
+
+static inline float get_deadband(const ThermostatConfig* config) {
+		return (config->comfort_mode == COMFORT_MODE_COMFORT)
+					 ? config->comfort_deadband
+					 : config->eco_deadband;
+}
+
+static inline bool time_elapsed(uint32_t start_time, uint32_t now, uint32_t duration) {
+		return (now - start_time) >= duration;
+}
+
+// ============================================================================
+// THERMAL DOMAIN LOGIC
+// ============================================================================
+
+
+// ============================================================================
+// Open Window Detection
+// ============================================================================
+
+static void update_open_window_detection(
+	const ThermostatConfig* config,
+	const ThermostatInput* input,
+	ThermostatState* state
+) {
+	if (!config->open_window_detection_enabled || !input->sensors_valid) {
+		state->open_window_detected = false;
+		return;
+	}
+
+	const uint32_t now = input->now_seconds;
+	const float current_temp = input->temperature;
+
+	// Update temperature history (circular buffer)
+	state->temperature_history[state->temperature_history_index] = current_temp;
+	state->temperature_history_times[state->temperature_history_index] = now;
+	uint8_t newest_idx = state->temperature_history_index;  // Current index has newest data
+	state->temperature_history_index = (state->temperature_history_index + 1) % 3;
+
+	// If window already detected, check if suspend period has elapsed
+	if (state->open_window_detected) {
+		if (time_elapsed(state->open_window_detect_time, now,
+						 config->open_window_suspend_time_sec)) {
+			state->open_window_detected = false;
+		}
+		return;
+	}
+
+	// Check for rapid temperature drop
+	// Compare oldest and newest temperature readings
+	uint8_t oldest_idx = state->temperature_history_index;  // After increment, this points to oldest
+
+	// Need enough time span for valid detection
+	if (state->temperature_history_times[oldest_idx] == 0) {
+		return;  // Not enough history yet
+	}
+
+	uint32_t time_span = now - state->temperature_history_times[oldest_idx];
+	if (time_span < config->open_window_time_window_sec) {
+		return;  // Not enough time elapsed for detection
+	}
+
+	// Calculate temperature drop (positive value means temperature decreased)
+	float temp_drop = state->temperature_history[oldest_idx] - state->temperature_history[newest_idx];
+
+	// Detect open window: significant drop over time window, only when heating might be active
+	if (temp_drop >= config->open_window_temp_drop_threshold &&
+			current_temp < config->heat_setpoint) {
+		state->open_window_detected = true;
+		state->open_window_detect_time = now;
+	}
+}
+
+static void update_thermal_domain(
+		const ThermostatConfig* config,
+		const ThermostatInput* input,
+		ThermostatState* state,
+		ThermostatOutput* output
+) {
+		if (!input->sensors_valid) {
+				state->thermal_state = THERMAL_STATE_IDLE;
+				state->thermal_pending = false;
+				output->heating_stage1 = false;
+				output->heating_stage2 = false;
+				output->cooling_stage1 = false;
+				output->cooling_stage2 = false;
+				return;
+		}
+
+		const float temp = input->temperature;
+
+	// Suspend heating if open window detected
+	if (state->open_window_detected &&
+			(state->thermal_state == THERMAL_STATE_HEATING ||
+			 state->thermal_state == THERMAL_STATE_HEATING_STAGE2)) {
+		state->thermal_state = THERMAL_STATE_IDLE;
+		state->thermal_pending = false;
+		output->heating_stage1 = false;
+		output->heating_stage2 = false;
+		return;
+	}
+		const uint32_t now = input->now_seconds;
+		const float deadband = get_deadband(config);
+		const float heat_setpoint = config->heat_setpoint;
+		const float cool_setpoint = config->cool_setpoint;
+		const float stage2_threshold = deadband * 1.5f;
+
+		const ThermalState prev_state = state->thermal_state;
+
+		// State machine
+		switch (state->thermal_state) {
+				case THERMAL_STATE_IDLE:
+						// Check if thermal activation is needed
+						bool heating_needed = config->heating_enabled &&
+																 temp < (heat_setpoint - deadband) &&
+																 time_elapsed(state->last_state_change_time, now,
+																						config->hysteresis_period_sec) &&
+									 !state->open_window_detected;
+
+						bool cooling_needed = config->cooling_enabled &&
+																 temp > (cool_setpoint + deadband) &&
+																 time_elapsed(state->last_state_change_time, now,
+																						config->hysteresis_period_sec);
+
+						if (heating_needed || cooling_needed) {
+								// If fan is disabled (non-HVAC), activate thermal immediately
+								if (!config->fan_enabled) {
+										state->thermal_state = heating_needed ? THERMAL_STATE_HEATING
+																													: THERMAL_STATE_COOLING;
+										state->thermal_pending = false;
+								}
+								// If fan is enabled (HVAC system), ensure fan pre-run before thermal
+								else if (!state->thermal_pending) {
+										// Start thermal pending (fan will start in update_fan_domain)
+										state->thermal_pending = true;
+										state->thermal_pending_time = now;
+								} else if (time_elapsed(state->thermal_pending_time, now,
+																			 config->fan_pre_run_sec)) {
+										// Fan pre-run complete, safe to activate thermal
+										state->thermal_state = heating_needed ? THERMAL_STATE_HEATING
+																													: THERMAL_STATE_COOLING;
+										state->thermal_pending = false;
+								}
+						} else {
+								state->thermal_pending = false;
+						}
+						break;
+
+				case THERMAL_STATE_HEATING: {
+						const bool min_cycle_met = time_elapsed(state->thermal_state_enter_time, now,
+																										 config->min_cycle_time_sec);
+
+						// Target reached
+						if (temp >= heat_setpoint) {
+								if (min_cycle_met) {
+										state->thermal_state = THERMAL_STATE_IDLE;
+										state->thermal_stop_time = now;  // Track when thermal stopped
+								}
+						}
+						// Stage 2 check
+						else if (config->heating_stage2_enabled &&
+										 time_elapsed(state->thermal_state_enter_time, now,
+																config->heat_stage2_delay_sec)) {
+								const float deviation = heat_setpoint - temp;
+								if (deviation > stage2_threshold) {
+										state->thermal_state = THERMAL_STATE_HEATING_STAGE2;
+								}
+						}
+						// Switch to cooling
+						if (config->cooling_enabled &&
+								temp > (cool_setpoint + deadband) &&
+								time_elapsed(state->last_state_change_time, now,
+													 config->hysteresis_period_sec) &&
+								min_cycle_met) {
+								state->thermal_state = THERMAL_STATE_COOLING;
+						}
+						break;
+				}
+
+				case THERMAL_STATE_HEATING_STAGE2: {
+						const bool min_cycle_met = time_elapsed(state->thermal_state_enter_time, now,
+																										 config->min_cycle_time_sec);
+
+						// Target reached
+						if (temp >= heat_setpoint) {
+								if (min_cycle_met) {
+										state->thermal_state = THERMAL_STATE_IDLE;
+										state->thermal_stop_time = now;
+								}
+						}
+						// Drop to stage 1 if deviation reduced
+						else {
+								const float deviation = heat_setpoint - temp;
+								if (deviation <= stage2_threshold && min_cycle_met) {
+										state->thermal_state = THERMAL_STATE_HEATING;
+								}
+						}
+						// Switch to cooling
+						if (config->cooling_enabled &&
+								temp > (cool_setpoint + deadband) &&
+								time_elapsed(state->last_state_change_time, now,
+													 config->hysteresis_period_sec) &&
+								min_cycle_met) {
+								state->thermal_state = THERMAL_STATE_COOLING;
+						}
+						break;
+				}
+
+				case THERMAL_STATE_COOLING: {
+						const bool min_cycle_met = time_elapsed(state->thermal_state_enter_time, now,
+																										 config->min_cycle_time_sec);
+
+						// Target reached
+						if (temp <= cool_setpoint) {
+								if (min_cycle_met) {
+										state->thermal_state = THERMAL_STATE_IDLE;
+										state->thermal_stop_time = now;
+								}
+						}
+						// Stage 2 check
+						else if (config->cooling_stage2_enabled &&
+										 time_elapsed(state->thermal_state_enter_time, now,
+																config->cool_stage2_delay_sec)) {
+								const float deviation = temp - cool_setpoint;
+								if (deviation > stage2_threshold) {
+										state->thermal_state = THERMAL_STATE_COOLING_STAGE2;
+								}
+						}
+						// Switch to heating
+						if (config->heating_enabled &&
+								temp < (heat_setpoint - deadband) &&
+								time_elapsed(state->last_state_change_time, now,
+													 config->hysteresis_period_sec) &&
+								min_cycle_met) {
+								state->thermal_state = THERMAL_STATE_HEATING;
+						}
+						break;
+				}
+
+				case THERMAL_STATE_COOLING_STAGE2: {
+						const bool min_cycle_met = time_elapsed(state->thermal_state_enter_time, now,
+																										 config->min_cycle_time_sec);
+
+						// Target reached
+						if (temp <= cool_setpoint) {
+								if (min_cycle_met) {
+										state->thermal_state = THERMAL_STATE_IDLE;
+										state->thermal_stop_time = now;
+								}
+						}
+						// Drop to stage 1 if deviation reduced
+						else {
+								const float deviation = temp - cool_setpoint;
+								if (deviation <= stage2_threshold && min_cycle_met) {
+										state->thermal_state = THERMAL_STATE_COOLING;
+								}
+						}
+						// Switch to heating
+						if (config->heating_enabled &&
+								temp < (heat_setpoint - deadband) &&
+								time_elapsed(state->last_state_change_time, now,
+													 config->hysteresis_period_sec) &&
+								min_cycle_met) {
+								state->thermal_state = THERMAL_STATE_HEATING;
+						}
+						break;
+				}
+		}
+
+		// Update state tracking only if changed
+		if (state->thermal_state != prev_state) {
+				state->last_state_change_time = now;
+
+				const bool is_idle_transition = (prev_state == THERMAL_STATE_IDLE ||
+																				 state->thermal_state == THERMAL_STATE_IDLE);
+				const bool is_heat_to_cool = ((prev_state == THERMAL_STATE_HEATING ||
+																			 prev_state == THERMAL_STATE_HEATING_STAGE2) &&
+																			(state->thermal_state == THERMAL_STATE_COOLING ||
+																			 state->thermal_state == THERMAL_STATE_COOLING_STAGE2));
+				const bool is_cool_to_heat = ((prev_state == THERMAL_STATE_COOLING ||
+																			 prev_state == THERMAL_STATE_COOLING_STAGE2) &&
+																			(state->thermal_state == THERMAL_STATE_HEATING ||
+																			 state->thermal_state == THERMAL_STATE_HEATING_STAGE2));
+
+				if (is_idle_transition || is_heat_to_cool || is_cool_to_heat) {
+						state->thermal_state_enter_time = now;
+				}
+		}
+
+		// Map states to outputs (SINGLE SOURCE OF TRUTH)
+		output->heating_stage1 = (state->thermal_state == THERMAL_STATE_HEATING ||
+															state->thermal_state == THERMAL_STATE_HEATING_STAGE2);
+		output->heating_stage2 = (state->thermal_state == THERMAL_STATE_HEATING_STAGE2);
+		output->cooling_stage1 = (state->thermal_state == THERMAL_STATE_COOLING ||
+															state->thermal_state == THERMAL_STATE_COOLING_STAGE2);
+		output->cooling_stage2 = (state->thermal_state == THERMAL_STATE_COOLING_STAGE2);
+}
+
+// ============================================================================
+// FAN DOMAIN LOGIC
+// ============================================================================
+
+static void update_fan_domain(
+		const ThermostatConfig* config,
+		const ThermostatInput* input,
+		ThermostatState* state,
+		const ThermostatOutput* thermal_output,
+		ThermostatOutput* output
+) {
+		if (!config->fan_enabled) {
+				output->fan = false;
+				state->fan_running = false;
+				return;
+		}
+
+		const bool thermal_active = (thermal_output->heating_stage1 || thermal_output->cooling_stage1);
+		const uint32_t now = input->now_seconds;
+
+		// Fan should run if:
+		// 1. Thermal is currently active
+		// 2. Thermal is pending (pre-run period)
+		// 3. Within post-run period after thermal stopped
+		// 4. User override
+
+		bool fan_needed = false;
+
+		if (thermal_active) {
+				fan_needed = true;
+		} else if (state->thermal_pending) {
+				// Thermal wants to activate, run fan for pre-run
+				fan_needed = true;
+		} else if (state->thermal_stop_time > 0 &&
+							 !time_elapsed(state->thermal_stop_time, now, config->fan_post_run_sec)) {
+				// Within post-run period
+				fan_needed = true;
+		} else if (input->fan_override) {
+				// User manual override
+				fan_needed = true;
+		}
+
+		// Track state changes
+		if (fan_needed && !state->fan_running) {
+				state->fan_start_time = now;
+				state->fan_running = true;
+		} else if (!fan_needed && state->fan_running) {
+				state->fan_running = false;
+				// Clear thermal_stop_time after post-run completes
+				if (state->thermal_stop_time > 0 &&
+						time_elapsed(state->thermal_stop_time, now, config->fan_post_run_sec)) {
+						state->thermal_stop_time = 0;
+				}
+		}
+
+		output->fan = state->fan_running;
+}
+
+// ============================================================================
+// HUMIDITY DOMAIN LOGIC
+// ============================================================================
+
+static void update_humidity_domain(
+		const ThermostatConfig* config,
+		const ThermostatInput* input,
+		ThermostatState* state,
+		ThermostatOutput* output
+) {
+		output->humidifier = false;
+		output->dehumidifier = false;
+
+		if (!config->humidity_control_enabled || !input->sensors_valid) {
+				state->humidity_active = false;
+				return;
+		}
+
+		const float humidity = input->humidity;
+		const float setpoint = config->humidity_setpoint;
+		const float deadband = 5.0f; // 5% humidity deadband
+
+		bool should_activate;
+
+		if (config->humidity_mode == HUMIDITY_MODE_HUMIDIFY) {
+				if (humidity < (setpoint - deadband)) {
+						should_activate = true;
+				} else if (humidity > setpoint) {
+						should_activate = false;
+				} else {
+						should_activate = state->humidity_active; // Maintain state in deadband
+				}
+
+				if (should_activate) {
+						output->humidifier = true;
+						if (!state->humidity_active) {
+								state->humidity_start_time = input->now_seconds;
+						}
+				}
+		} else { // DEHUMIDIFY
+				if (humidity > (setpoint + deadband)) {
+						should_activate = true;
+				} else if (humidity < setpoint) {
+						should_activate = false;
+				} else {
+						should_activate = state->humidity_active;
+				}
+
+				if (should_activate) {
+						output->dehumidifier = true;
+						if (!state->humidity_active) {
+								state->humidity_start_time = input->now_seconds;
+						}
+				}
+		}
+
+		state->humidity_active = should_activate;
+}
+
+// ============================================================================
+// HOT WATER DOMAIN LOGIC
+// ============================================================================
+
+static void update_hot_water_domain(
+		const ThermostatConfig* config,
+		const ThermostatInput* input,
+		ThermostatState* state,
+		ThermostatOutput* output
+) {
+		if (!config->hot_water_enabled) {
+				output->hot_water = false;
+				state->hot_water_active = false;
+				return;
+		}
+
+		// Hot water is purely demand-driven
+		const bool demand = input->hot_water_demand;
+
+		if (demand && !state->hot_water_active) {
+				state->hot_water_start_time = input->now_seconds;
+				state->hot_water_active = true;
+		} else if (!demand && state->hot_water_active) {
+				state->hot_water_active = false;
+		}
+
+		output->hot_water = state->hot_water_active;
+}
+
+// ============================================================================
+// PUBLIC API IMPLEMENTATION
+// ============================================================================
+
+void thermostat_config_init(ThermostatConfig* config) {
+		memset(config, 0, sizeof(ThermostatConfig));
+
+		config->temp_unit = TEMP_UNIT_CELSIUS;
+		config->comfort_mode = COMFORT_MODE_COMFORT;
+		config->humidity_mode = HUMIDITY_MODE_HUMIDIFY;
+
+		config->heating_enabled = true;
+		config->cooling_enabled = true;
+		config->fan_enabled = true;
+
+		config->heat_setpoint = 20.0f;
+		config->cool_setpoint = 24.0f;
+		config->humidity_setpoint = 50.0f;
+
+		config->hysteresis_period_sec = DEFAULT_HYSTERESIS_PERIOD_SEC;
+		config->heat_stage2_delay_sec = DEFAULT_HEAT_STAGE2_DELAY_SEC;
+		config->cool_stage2_delay_sec = DEFAULT_COOL_STAGE2_DELAY_SEC;
+		config->min_cycle_time_sec = DEFAULT_MIN_CYCLE_TIME_SEC;
+
+		// Fan timing (NEW)
+		config->fan_pre_run_sec = DEFAULT_FAN_PRE_RUN_SEC;
+		config->fan_post_run_sec = DEFAULT_FAN_POST_RUN_SEC;
+
+		config->comfort_deadband = DEFAULT_COMFORT_DEADBAND_C;
+		config->eco_deadband = DEFAULT_ECO_DEADBAND_C;
+}
+
+bool thermostat_config_validate(const ThermostatConfig* config) {
+		// Count enabled domains
+		int enabled_count = config->heating_enabled + config->heating_stage2_enabled +
+											 config->cooling_enabled + config->cooling_stage2_enabled +
+											 config->fan_enabled + config->humidity_control_enabled +
+											 config->hot_water_enabled;
+
+		if (enabled_count > 4) {
+				return false; // Max 4 domains can be enabled
+		}
+
+		// Stage 2 requires stage 1
+		if ((config->heating_stage2_enabled && !config->heating_enabled) ||
+				(config->cooling_stage2_enabled && !config->cooling_enabled)) {
+				return false;
+		}
+
+		// Setpoint sanity checks
+		if (config->heating_enabled && config->cooling_enabled &&
+				config->heat_setpoint >= config->cool_setpoint) {
+				return false;
+		}
+
+		if (config->humidity_setpoint < 0.0f || config->humidity_setpoint > 100.0f) {
+				return false;
+		}
+
+		return true;
+}
+
+void thermostat_state_init(ThermostatState* state, uint32_t now_seconds) {
+		memset(state, 0, sizeof(ThermostatState));
+		state->thermal_state = THERMAL_STATE_IDLE;
+		state->last_state_change_time = now_seconds;
+}
+
+
+// --- BOOST LOGIC ---
+static bool boost_is_active(const ThermostatState* state, const char* domain, uint32_t now) {
+	if (strcmp(domain, "heating") == 0) {
+		return state->boost_active_heating && now < state->boost_end_time_heating;
+	} else if (strcmp(domain, "cooling") == 0) {
+		return state->boost_active_cooling && now < state->boost_end_time_cooling;
+	} else if (strcmp(domain, "hot_water") == 0) {
+		return state->boost_active_hot_water && now < state->boost_end_time_hot_water;
+	}
+	return false;
+}
+
+void thermostat_boost_activate(ThermostatState* state, const char* domain, uint32_t now, uint32_t duration_sec) {
+	if (strcmp(domain, "heating") == 0) {
+		state->boost_active_heating = true;
+		state->boost_end_time_heating = now + duration_sec;
+		state->boost_last_duration_heating = duration_sec;
+	} else if (strcmp(domain, "cooling") == 0) {
+		state->boost_active_cooling = true;
+		state->boost_end_time_cooling = now + duration_sec;
+		state->boost_last_duration_cooling = duration_sec;
+	} else if (strcmp(domain, "hot_water") == 0) {
+		state->boost_active_hot_water = true;
+		state->boost_end_time_hot_water = now + duration_sec;
+		state->boost_last_duration_hot_water = duration_sec;
+	}
+}
+
+void thermostat_boost_cancel(ThermostatState* state, const char* domain) {
+	if (strcmp(domain, "heating") == 0) {
+		state->boost_active_heating = false;
+		state->boost_end_time_heating = 0;
+	} else if (strcmp(domain, "cooling") == 0) {
+		state->boost_active_cooling = false;
+		state->boost_end_time_cooling = 0;
+	} else if (strcmp(domain, "hot_water") == 0) {
+		state->boost_active_hot_water = false;
+		state->boost_end_time_hot_water = 0;
+	}
+}
+
+bool thermostat_boost_is_active(const ThermostatState* state, const char* domain, uint32_t now) {
+	return boost_is_active(state, domain, now);
+}
+
+void thermostat_update(
+		const ThermostatConfig* config,
+		const ThermostatInput* input,
+		ThermostatState* state,
+		ThermostatOutput* output
+) {
+	// Clear output
+	memset(output, 0, sizeof(ThermostatOutput));
+
+	uint32_t now = input->now_seconds;
+
+	// --- BOOST OVERRIDE LOGIC ---
+	bool boost_heat = boost_is_active(state, "heating", now);
+	bool boost_cool = boost_is_active(state, "cooling", now);
+	bool boost_water = boost_is_active(state, "hot_water", now);
+
+	// Expire boost if needed
+	if (state->boost_active_heating && now >= state->boost_end_time_heating) state->boost_active_heating = false;
+	if (state->boost_active_cooling && now >= state->boost_end_time_cooling) state->boost_active_cooling = false;
+	if (state->boost_active_hot_water && now >= state->boost_end_time_hot_water) state->boost_active_hot_water = false;
+
+	// Safety shutdown overrides boost for thermal domains
+	if (!input->sensors_valid) {
+		boost_heat = false;
+		boost_cool = false;
+	}
+
+	// Mutual exclusion: heating and cooling boosts cannot both be active
+	if (boost_heat && boost_cool) {
+		// If both are active, keep whichever was activated more recently
+		// (higher end_time means more recent activation)
+		if (state->boost_end_time_heating > state->boost_end_time_cooling) {
+			boost_cool = false;
+		} else if (state->boost_end_time_cooling > state->boost_end_time_heating) {
+			boost_heat = false;
+		} else {
+			// Equal end times - disable both (shouldn't happen in practice)
+			boost_heat = false;
+			boost_cool = false;
+		}
+	}
+
+	// Respect domain enabled flags
+	if (!config->heating_enabled) boost_heat = false;
+	if (!config->cooling_enabled) boost_cool = false;
+	if (!config->hot_water_enabled) boost_water = false;
+
+	// Open window detection overrides heating boost
+	if (state->open_window_detected && boost_heat) {
+		boost_heat = false;
+	}
+
+	// If boost is active, override normal logic for that domain
+	if (boost_heat) {
+		output->heating_stage1 = true;
+		output->heating_stage2 = false;
+		// All other outputs handled by normal logic
+	}
+	if (boost_cool) {
+		output->cooling_stage1 = true;
+		output->cooling_stage2 = false;
+	}
+	if (boost_water) {
+		output->hot_water = true;
+	}
+
+	// Update each domain independently, but skip normal logic for boosted domains
+	update_open_window_detection(config, input, state);
+	if (!boost_heat && !boost_cool) {
+		update_thermal_domain(config, input, state, output);
+	}
+	update_fan_domain(config, input, state, output, output);
+	update_humidity_domain(config, input, state, output);
+	if (!boost_water) {
+		update_hot_water_domain(config, input, state, output);
+	}
+}
+
+float thermostat_c_to_f(float celsius) {
+		return (celsius * 9.0f / 5.0f) + 32.0f;
+}
+
+float thermostat_f_to_c(float fahrenheit) {
+		return (fahrenheit - 32.0f) * 5.0f / 9.0f;
+}

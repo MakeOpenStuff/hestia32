@@ -1,0 +1,73 @@
+menu "Hestia32 Configuration"
+
+    choice HESTIA32_BOARD_TYPE
+        prompt "Board Type"
+        default HESTIA32_BOARD_DEVKIT
+        help
+            Select the ESP32-C5 board type.
+
+        config HESTIA32_BOARD_DEVKIT
+            bool "ESP32-C5-DevKit"
+            help
+                Official Espressif ESP32-C5 DevKit with full GPIO access.
+                Supports display, relays via direct GPIO.
+
+        config HESTIA32_BOARD_XIAO
+            bool "Seeed XIAO ESP32-C5"
+            help
+                Seeed Studio XIAO ESP32-C5 compact board.
+                Limited GPIOs, uses TCA9555 I2C GPIO expander for relays.
+    endchoice
+
+    config BOARD_TYPE_DEVKIT
+        bool
+        default y if HESTIA32_BOARD_DEVKIT
+
+    config BOARD_TYPE_XIAO
+        bool
+        default y if HESTIA32_BOARD_XIAO
+
+    choice HESTIA32_PROTOCOL
+        prompt "Communication Protocol"
+        default HESTIA32_PROTOCOL_MQTT
+        help
+            Select the communication protocol for smart home integration.
+            This determines which protocol stack is compiled into the firmware.
+
+        config HESTIA32_PROTOCOL_MQTT
+            bool "MQTT over WiFi"
+            help
+                Use MQTT protocol over WiFi for communication.
+                Requires WiFi provisioning and MQTT broker configuration.
+                Compatible with Home Assistant, OpenHAB, and other MQTT-based systems.
+
+        config HESTIA32_PROTOCOL_ZIGBEE
+            bool "Zigbee"
+            help
+                Use Zigbee protocol for communication (NOT YET IMPLEMENTED).
+                Requires Zigbee coordinator and network commissioning.
+                Compatible with Zigbee2MQTT, ZHA, and Zigbee hubs.
+                NOTE: This option is a placeholder for future development.
+
+        config HESTIA32_PROTOCOL_MATTER
+            bool "Matter"
+            help
+                Use Matter protocol for communication (NOT YET IMPLEMENTED).
+                Compatible with Apple HomeKit, Google Home, Amazon Alexa.
+                Supports multi-fabric (multiple ecosystems simultaneously).
+                NOTE: This option is a placeholder for future development.
+    endchoice
+
+    config PROTOCOL_MQTT
+        bool
+        default y if HESTIA32_PROTOCOL_MQTT
+
+    config PROTOCOL_ZIGBEE
+        bool
+        default y if HESTIA32_PROTOCOL_ZIGBEE
+
+    config PROTOCOL_MATTER
+        bool
+        default y if HESTIA32_PROTOCOL_MATTER
+
+endmenu

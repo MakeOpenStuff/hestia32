@@ -1,0 +1,24 @@
+# Hestia32 Zigbee Protocol Configuration
+# Use this preset: idf.py -D SDKCONFIG_DEFAULTS=sdkconfig.zigbee build
+# NOTE: Zigbee support is not yet implemented - this is a placeholder
+
+CONFIG_IDF_TARGET="esp32c5"
+
+# Flash Size
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+
+# Protocol Selection
+CONFIG_HESTIA32_PROTOCOL_ZIGBEE=y
+CONFIG_PROTOCOL_ZIGBEE=y
+
+# Zigbee Configuration (future)
+# CONFIG_ESP_ZIGBEE_ENABLED=y
+# CONFIG_ZB_ENABLED=y
+
+# Partition Table
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_two_ota.csv"
+
+# Note: WiFi disabled for Zigbee-only build
+# CONFIG_ESP_WIFI_ENABLED=n

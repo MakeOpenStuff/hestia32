@@ -3,6 +3,8 @@
 [![Build Status](https://github.com/MakeOpenStuff/hestia32/actions/workflows/build.yml/badge.svg)](https://github.com/MakeOpenStuff/hestia32/actions/workflows/build.yml)
 [![Tests](https://github.com/MakeOpenStuff/hestia32/actions/workflows/build.yml/badge.svg?event=push)](https://github.com/MakeOpenStuff/hestia32/actions)
 
+![Hestia32 PCB Assembly](img/pcb-v1.0_assembly.jpg)
+
 ESP32 firmware with WiFi provisioning, OTA updates, ILI9488 display, resistive touch and factory reset support.
 
 ## Supported Hardware

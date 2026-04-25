@@ -20,6 +20,10 @@ Resulting variants:
 
 ## History
 
+- `v1.2`:
+  - Improve sensor location
+	- Improve via stitching
+	- Add extra info on silkscreen
 - `v1.1`:
   - Fix I2C pull up resistors
   - Renumerate components prefixes without gaps
@@ -31,6 +35,22 @@ Resulting variants:
 
 ## TODO (Future Improvements)
 
+- [x] Develop XIAO-EU
+  - [x] Schematic
+  - [x] BOM
+  - [x] Gerber
+- [x] Develop XIAO-HVAC
+  - [x] Schematic
+  - [x] BOM
+  - [x] Gerber
 - [x] Renumber components prefixes without gaps
 - [x] Add unpopulated additional GPIOs pins from port expander
 - [x] Increase clearance around holes in case user uses large metal screw or washer
+- [ ] Develop DevKit-EU
+  - [ ] Schematic
+  - [ ] BOM
+  - [ ] Gerber
+- [ ] Develop DevKit-HVAC
+  - [ ] Schematic
+  - [ ] BOM
+  - [ ] Gerber

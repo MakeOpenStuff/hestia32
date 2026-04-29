@@ -11,12 +11,12 @@ There are 4 possible PCB variants from two feature axes:
 
 Resulting variants:
 
-| Variant | Folder | BOM |
-|---------|--------|-----|
-| DevKit-EU | DevKit-EU/ | - |
-| DevKit-HVAC | DevKit-HVAC/ | - |
-| XIAO-EU | [XIAO-EU/](XIAO-EU/) | [BOM](XIAO-EU/README.md) |
-| XIAO-HVAC | [XIAO-HVAC/](XIAO-HVAC/) | [BOM](XIAO-HVAC/README.md) |
+| Variant | Folder | BOM | Interactive BOM |
+|---------|--------|-----|-----------------|
+| DevKit-EU | DevKit-EU/ | - | - |
+| DevKit-HVAC | DevKit-HVAC/ | - | - |
+| XIAO-EU | [XIAO-EU/](XIAO-EU/) | [BOM](XIAO-EU/README.md) | [iBOM](https://htmlpreview.github.io/?https://github.com/MakeOpenStuff/hestia32/blob/main/pcb/XIAO-EU/iBOM_Hestia32-EU_XIAO.html) |
+| XIAO-HVAC | [XIAO-HVAC/](XIAO-HVAC/) | [BOM](XIAO-HVAC/README.md) | [iBOM](https://htmlpreview.github.io/?https://github.com/MakeOpenStuff/hestia32/blob/main/pcb/XIAO-HVAC/iBOM_Hestia32-HVAC_XIAO.html) |
 
 ## History
 

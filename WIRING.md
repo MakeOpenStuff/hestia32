@@ -25,7 +25,7 @@ This file was originally written for ESP32-C5-DevKitC-1 wiring. XIAO uses a diff
 		│ 5V          │              │         13  │ Backlight
 		│ GND         │              │         GND │
 		└─────────────┘              └─────────────┘
-											 USB-C
+		                   USB-C
 ```
 
 ### Pin Usage Summary
@@ -56,7 +56,7 @@ This file was originally written for ESP32-C5-DevKitC-1 wiring. XIAO uses a diff
 	 │ D5 / GPIO24 │ I2C SCL       │ D8  / GPIO8 │ Display SCK + Touch SCK
 	 │ D6 / GPIO11 │ Touch IRQ/PEN │ D7  / GPIO12│ Touch CS
 	 └─────────────┘               └─────────────┘
-								 ANTENNA SIDE (bottom)
+	              ANTENNA SIDE (bottom)
 ```
 
 //TODO: Pinout for both boards need verification and cleanup for useability

@@ -20,6 +20,12 @@ Resulting variants:
 
 ## History
 
+### XIAO-HVAC
+- `v1.4`:
+  - Split versioning between HVAC and EU PCB designs
+  - Use LM2596HVS instead of LM2596S
+
+### Shared for both XIAO-HVAC and XIAO-EU
 - `v1.3`:
   - XIAO-HVAC: Used coil relays instead of SSR
   - XIAO-HVAC: Used LM2596 for power supply

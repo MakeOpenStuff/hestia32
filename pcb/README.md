@@ -21,9 +21,19 @@ Resulting variants:
 ## History
 
 ### XIAO-HVAC
+- `v1.5`:
+  - No funtional change
+  - Added LCD SDO (MISO) test point
+  - Changed label 3V3 to XIAO_3V3 to avoid users driving heavy loads
 - `v1.4`:
   - Split versioning between HVAC and EU PCB designs
   - Use LM2596HVS instead of LM2596S
+
+### XIAO-EU
+- `v1.4`:
+  - No funtional change
+  - Added LCD SDO (MISO) test point
+  - Changed label 3V3 to XIAO_3V3 to avoid users driving heavy loads
 
 ### Shared for both XIAO-HVAC and XIAO-EU
 - `v1.3`:

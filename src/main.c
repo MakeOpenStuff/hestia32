@@ -94,20 +94,20 @@ static void test_relay_cycle(void)
 		ESP_LOGI(TAG, "RELAY TEST: Cycling through all relays...");
 		ESP_LOGI(TAG, "========================================");
 
-		for (int cycle = 0; cycle < 1; cycle++) {
+		for (int cycle = 0; cycle < 3; cycle++) {
 				ESP_LOGI(TAG, "Test cycle %d/3", cycle + 1);
 
-				for (int relay = 0; relay < 4; relay++) {
+				for (int relay = 0; relay < RELAY_COUNT; relay++) {
 						ESP_LOGI(TAG, "  Relay %d: ON", relay);
 						relay_manager_set_relay(relay, true);
-						vTaskDelay(pdMS_TO_TICKS(500));
+						vTaskDelay(pdMS_TO_TICKS(1000));
 
 						ESP_LOGI(TAG, "  Relay %d: OFF", relay);
 						relay_manager_set_relay(relay, false);
-						vTaskDelay(pdMS_TO_TICKS(300));
+						vTaskDelay(pdMS_TO_TICKS(1000));
 				}
 
-				vTaskDelay(pdMS_TO_TICKS(500));
+				vTaskDelay(pdMS_TO_TICKS(1000));
 		}
 
 		ESP_LOGI(TAG, "========================================");

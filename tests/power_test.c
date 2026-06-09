@@ -5,6 +5,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "../core/sensor_sht45.h"
+#include "core_config.h"
 
 static const char *TAG = "power_test";
 
@@ -16,6 +17,7 @@ static void set_relay(int relay_num, bool state)
 				case 2: gpio = RELAY2_GPIO; break;
 				case 3: gpio = RELAY3_GPIO; break;
 				case 4: gpio = RELAY4_GPIO; break;
+				case 5: gpio = RELAY5_GPIO; break;
 				default: return;
 		}
 		gpio_set_level(gpio, state ? 1 : 0);
@@ -28,7 +30,8 @@ esp_err_t power_test_init(void)
 		// Initialize relay GPIOs
 		gpio_config_t io_conf = {
 				.pin_bit_mask = (1ULL << RELAY1_GPIO) | (1ULL << RELAY2_GPIO) |
-												(1ULL << RELAY3_GPIO) | (1ULL << RELAY4_GPIO),
+												(1ULL << RELAY3_GPIO) | (1ULL << RELAY4_GPIO) |
+												(1ULL << RELAY5_GPIO),
 				.mode = GPIO_MODE_OUTPUT,
 				.pull_up_en = GPIO_PULLUP_DISABLE,
 				.pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -41,12 +44,12 @@ esp_err_t power_test_init(void)
 		}
 
 		// Set all relays OFF initially
-		for (int i = 1; i <= 4; i++) {
+		for (int i = 1; i <= RELAY_COUNT; i++) {
 				set_relay(i, false);
 		}
 
-		ESP_LOGI(TAG, "Relays initialized on GPIOs: %d, %d, %d, %d",
-						 RELAY1_GPIO, RELAY2_GPIO, RELAY3_GPIO, RELAY4_GPIO);
+		ESP_LOGI(TAG, "Relays initialized on GPIOs: %d, %d, %d, %d, %d",
+						 RELAY1_GPIO, RELAY2_GPIO, RELAY3_GPIO, RELAY4_GPIO, RELAY5_GPIO);
 
 		// Initialize SHT45 sensor
 		ret = sht45_init(SHT45_I2C_SCL, SHT45_I2C_SDA);
@@ -69,11 +72,11 @@ void power_test_run(void)
 {
 		ESP_LOGI(TAG, "========================================");
 		ESP_LOGI(TAG, "Starting power consumption test");
-		ESP_LOGI(TAG, "Relay cycle: 0→1→2→3→4 active, 5s hold at 4");
+		ESP_LOGI(TAG, "Relay cycle: 0→1→2→3→4 active, 5s hold at 5");
 		ESP_LOGI(TAG, "SHT45 readings every 1 second");
 		ESP_LOGI(TAG, "========================================");
 
-		int relay_state = 0;  // 0 = all off, 1-4 = that many relays on
+		int relay_state = 0;  // 0 = all off, 1-5 = that many relays on
 		uint32_t last_change_ms = 0;
 		uint32_t last_read_ms = 0;
 
@@ -82,17 +85,17 @@ void power_test_run(void)
 
 				// Handle relay state changes
 				if (now_ms - last_change_ms >= 1000) {
-						if (relay_state == 4 && now_ms - last_change_ms >= 5000) {
-								// After holding all 4 relays for 5 seconds, restart cycle
+						if (relay_state == RELAY_COUNT && now_ms - last_change_ms >= 5000) {
+								// After holding all relays for 5 seconds, restart cycle
 								relay_state = 0;
-								for (int i = 1; i <= 4; i++) {
+								for (int i = 1; i <= RELAY_COUNT; i++) {
 										set_relay(i, false);
 								}
 								last_change_ms = now_ms;
 								ESP_LOGI(TAG, "RELAYS: All OFF (cycle restart)");
-						} else if (relay_state < 4 || (relay_state == 4 && now_ms - last_change_ms < 5000)) {
+						} else if (relay_state < RELAY_COUNT || (relay_state == RELAY_COUNT && now_ms - last_change_ms < 5000)) {
 								// Turn off all relays first
-								for (int i = 1; i <= 4; i++) {
+								for (int i = 1; i <= RELAY_COUNT; i++) {
 										set_relay(i, false);
 								}
 
@@ -111,9 +114,11 @@ void power_test_run(void)
 										ESP_LOGI(TAG, "RELAYS: 3 active (GPIO %d, %d, %d)", RELAY1_GPIO, RELAY2_GPIO, RELAY3_GPIO);
 								} else if (relay_state == 4) {
 										ESP_LOGI(TAG, "RELAYS: 4 active (GPIO %d, %d, %d, %d) - HOLDING 5s", RELAY1_GPIO, RELAY2_GPIO, RELAY3_GPIO, RELAY4_GPIO);
+								} else if (relay_state == 5) {
+										ESP_LOGI(TAG, "RELAYS: 5 active (GPIO %d, %d, %d, %d, %d) - HOLDING 5s", RELAY1_GPIO, RELAY2_GPIO, RELAY3_GPIO, RELAY4_GPIO, RELAY5_GPIO);
 								}
 
-								if (relay_state < 4) {
+								if (relay_state < RELAY_COUNT) {
 										relay_state++;
 										last_change_ms = now_ms;
 								}

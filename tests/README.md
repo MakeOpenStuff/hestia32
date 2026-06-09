@@ -8,7 +8,7 @@ These tests can be compiled into the main firmware and called from `app_main()`.
 ### Power Consumption Test
 **Files:** `power_test.c`, `power_test.h`
 Needed by power profiler
-- Tests 4 SSR relays
+- Tests all relay outputs
 - Reads SHT45 sensor (I2C on GPIO 4 SCL, GPIO 5 SDA)
 - Cycles through relay states
 

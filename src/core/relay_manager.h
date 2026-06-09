@@ -30,7 +30,7 @@ esp_err_t relay_manager_deinit(void);
 /**
  * @brief Set relay state
  *
- * @param relay_num Relay number (0-3)
+ * @param relay_num Relay number (0 to RELAY_COUNT-1)
  * @param state Relay state (true=ON, false=OFF)
  * @return esp_err_t ESP_OK on success
  */
@@ -39,7 +39,7 @@ esp_err_t relay_manager_set_relay(uint8_t relay_num, bool state);
 /**
  * @brief Get relay state
  *
- * @param relay_num Relay number (0-3)
+ * @param relay_num Relay number (0 to RELAY_COUNT-1)
  * @param state Pointer to store relay state (true=ON, false=OFF)
  * @return esp_err_t ESP_OK on success
  */
@@ -48,7 +48,7 @@ esp_err_t relay_manager_get_relay(uint8_t relay_num, bool *state);
 /**
  * @brief Set all relays at once
  *
- * @param states 4-bit value where bit 0=relay0, bit 1=relay1, etc.
+ * @param states Bitmask where bit 0=relay0, bit 1=relay1, etc.
  * @return esp_err_t ESP_OK on success
  */
 esp_err_t relay_manager_set_all(uint8_t states);

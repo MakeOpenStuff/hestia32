@@ -12,7 +12,7 @@ This file was originally written for ESP32-C5-DevKitC-1 wiring. XIAO uses a diff
 		│ 3V3         │              │         GND │
 		│ RTS         │              │         TX0 │ (GPIO 11)
 		│ 2           │ Touch MISO   │         RX0 │ (GPIO 12)
-		│ 3           │ Relay 3      │         24  │
+		│ 3           │ Relay 3      │         24  │ Relay 5
 		│ 0           │ Relay 1      │         23  │
 		│ 1           │ Relay 2      │         15  │ Touch IRQ/PEN
 		│ 6           │ SPI CLK      │         27  │
@@ -33,7 +33,7 @@ This file was originally written for ESP32-C5-DevKitC-1 wiring. XIAO uses a diff
 - **Display**: GPIO 6-10, 13 (SPI + backlight)
 - **Touch**: GPIO 2, 14, 15 (shared SPI on 6-7)
 - **SHT45 Sensor**: GPIO 4 (SCL), GPIO 5 (SDA) - I2C
-- **Relays**: GPIO 0, 1, 3, 26
+- **Relays**: GPIO 0, 1, 3, 26, 24
 - **Reserved**: TX0/RX0 (GPIO 11/12 - UART0), GPIO 28 (BOOT), RTS
 
 ---
@@ -69,7 +69,7 @@ This file was originally written for ESP32-C5-DevKitC-1 wiring. XIAO uses a diff
 ### Important
 - XIAO does not share the DevKit pin numbering layout. Do not wire XIAO using the DevKit table above.
 - In firmware, XIAO display mapping is defined in `src/core/display_config.h` under `#ifdef CONFIG_BOARD_TYPE_XIAO`.
-- **XIAO Relays**: Controlled via TCA9555 I2C GPIO expander pins 0-3, same active-LOW logic (expander pin LOW = relay ON)
+- **XIAO Relays**: Controlled via TCA9555 I2C GPIO expander pins 0-4 through TBD62083 driver channels.
 
 ### XIAO Relay Configuration (via TCA9555)
 ```
@@ -77,8 +77,9 @@ TCA9555 Pin 0 → Relay 1 control input (active-LOW)
 TCA9555 Pin 1 → Relay 2 control input (active-LOW)
 TCA9555 Pin 2 → Relay 3 control input (active-LOW)
 TCA9555 Pin 3 → Relay 4 control input (active-LOW)
+TCA9555 Pin 4 → Relay 5 control input (active-LOW)
 ```
-Wire each TCA9555 output pin to SSR control negative, with SSR control positive to +5V (same as DevKit).
+Wire each TCA9555 output pin to relay-driver input negative, with input positive to +5V (same as DevKit).
 
 ### XIAO Display/Touch Pin Mapping
 
@@ -184,50 +185,53 @@ Wire each TCA9555 output pin to SSR control negative, with SSR control positive 
 
 ---
 
-## Solid State Relays (SSR)
+## Relays
 
 ### Relay Configuration
-Four SSR outputs for HVAC control (heating, cooling, fan, etc.)
+- DevKit: 5 direct GPIO outputs
+- XIAO: 5 outputs via TCA9555 pins 0-4 driving TBD62083 channels
 
 ### Pin Connections
 
 | Relay | ESP32-C5 GPIO | Function | Notes |
 |-------|---------------|----------|-------|
-| Relay 1 | GPIO 0 | Output 1 | Active LOW - GPIO LOW = Relay ON |
-| Relay 2 | GPIO 1 | Output 2 | Active LOW - GPIO LOW = Relay ON |
-| Relay 3 | GPIO 3 | Output 3 | Active LOW - GPIO LOW = Relay ON |
+| Relay 1 | GPIO 0  | Output 1 | Active LOW - GPIO LOW = Relay ON |
+| Relay 2 | GPIO 1  | Output 2 | Active LOW - GPIO LOW = Relay ON |
+| Relay 3 | GPIO 3  | Output 3 | Active LOW - GPIO LOW = Relay ON |
 | Relay 4 | GPIO 26 | Output 4 | Active LOW - GPIO LOW = Relay ON |
+| Relay 5 | GPIO 24 | Output 5 | Active LOW - GPIO LOW = Relay ON |
 
 ### Relay Control
-- **Logic Level**: Active LOW (GPIO LOW = relay ON, GPIO HIGH = relay OFF)
-- **Wiring**: SSR control + pin → +5V, control - pin → ESP32 GPIO
+- **Logic Level**: Configurable in firmware (`CONFIG_RELAY_ACTIVE_LOW`)
+- **Wiring**: Relay control + pin → +5V, control - pin → ESP32 GPIO
 - **Control Type**: Direct GPIO output (DevKit) or TCA9555 I2C expander (XIAO)
-- **Switching**: Solid state (no mechanical contacts)
-- **Recommended SSR**: OMRON G3MB-202P or similar with 5V input
 
-### Why Active-LOW?
-- **Fail-safe**: GPIOs default HIGH during boot → relays stay OFF
-- **Safety**: System crash or reset keeps outputs disabled
-- **Current sinking**: GPIOs sink current better than sourcing
+### Why Use Active-LOW (Optional)
+- **Fail-safe**: GPIOs default HIGH during boot can keep relays OFF
+- **Safety**: System crash or reset can keep outputs disabled
+- **Current sinking**: GPIOs often sink current better than sourcing
 
 ### Notes
-1. SSRs should have 3.3V-compatible control inputs
-2. SSR load side handles AC/DC high voltage - ensure proper isolation
+1. Relay driver inputs should be 3.3V-compatible
+2. Relay load side may carry high voltage/current - ensure proper isolation and creepage
 3. GPIOs selected to avoid conflicts with display (6-10, 13-15) and UART (11-12)
-4. Adjacent GPIO numbers (0,1,3,26) simplify PCB routing
+4. GPIOs selected to avoid display, touch, UART0, and BOOT-button pins
 
-### PCB Wiring Example (per SSR)
+### PCB Wiring Example (per relay channel)
 ```
-                            OMRON G3MB-202P
-+5V ──────────────────────► [+] Control Input
-                            [-] Control Input ──► ESP32 GPIO (0, 1, 3, or 26)
++5V ──────────────────────► [+] Relay Driver Input
+							[-] Relay Driver Input ──► ESP32 GPIO (0, 1, 3, 26, or 24)
 
 GND ───────────────────────────────────────────► Ground
 ```
 
-When GPIO = LOW (0V): Current flows (+5V → SSR LED → GPIO), SSR conducts → **Relay ON**
-When GPIO = HIGH (3.3V): Insufficient voltage (1.7V) across LED → **Relay OFF**
-On boot/reset: GPIO defaults HIGH → All relays safe (OFF)
+When configured as active-LOW:
+- GPIO = LOW (0V): Relay ON
+- GPIO = HIGH (3.3V): Relay OFF
+
+When configured as active-HIGH:
+- GPIO = HIGH (3.3V): Relay ON
+- GPIO = LOW (0V): Relay OFF
 
 ---
 
@@ -236,10 +240,10 @@ On boot/reset: GPIO defaults HIGH → All relays safe (OFF)
 ### Reserved/In Use
 | GPIO | Function | Notes |
 |------|----------|-------|
-| 0 | Relay 1 | SSR control |
-| 1 | Relay 2 | SSR control |
+| 0 | Relay 1 | Relay control |
+| 1 | Relay 2 | Relay control |
 | 2 | Touch MISO | XPT2046 data out |
-| 3 | Relay 3 | SSR control |
+| 3 | Relay 3 | Relay control |
 | 4 | SHT45 SDA | I2C data |
 | 5 | SHT45 SCL | I2C clock |
 | 6 | SPI Clock | Shared display/touch |
@@ -252,7 +256,8 @@ On boot/reset: GPIO defaults HIGH → All relays safe (OFF)
 | 13 | Backlight | PWM control |
 | 14 | Touch CS | Touch chip select |
 | 15 | Touch IRQ | Touch interrupt |
-| 26 | Relay 4 | SSR control |
+| 26 | Relay 4 | Relay control |
+| 24 | Relay 5 | Relay control |
 
 ### Available GPIOs
 Check ESP32-C5 pinout under /docs/esp32-c5/ for additional available GPIOs not listed above.

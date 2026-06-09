@@ -34,7 +34,7 @@ ESP32 firmware with WiFi provisioning, OTA updates, ILI9488 display, resistive t
 - **Automatic touch calibration** on first boot
 - **Resistive touch coordinate mapping** for accurate input
 - **Configurable sensor input** (SHT45 temperature/humidity)
-- **Relay control** for heating, cooling, hot water, and fan outputs
+- **Relay control** Five for HVAC outputs
 
 ### Communication & Provisioning
 - **WiFi provisioning** via web interface in AP (access point) mode

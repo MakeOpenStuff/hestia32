@@ -37,11 +37,11 @@ Resulting variants:
 
 ### Shared for both XIAO-HVAC and XIAO-EU
 - `v1.3`:
-  - XIAO-HVAC: Used coil relays instead of SSR
+  - XIAO-HVAC: Used coil relays instead of solid-state relays
   - XIAO-HVAC: Used LM2596 for power supply
   - XIAO-HVAC: Improved filtering
   - XIAO-HVAC: Supported heat pumps
-  - XIAO-EU: Used coil relays instead of SSR
+  - XIAO-EU: Used coil relays instead of solid-state relays
   - XIAO-EU: Improved filtering
   - XIAO-EU: Supported heat pumps
 - `v1.2`:
@@ -63,14 +63,14 @@ Resulting variants:
   - [x] Schematic
   - [x] BOM
   - [x] Gerber
-  - [x] Use coil relays instead of SSR
+  - [x] Use coil relays instead of solid-state relays
   - [x] Support heat pumps
   - [x] Improve filtering
 - [x] Develop XIAO-HVAC
   - [x] Schematic
   - [x] BOM
   - [x] Gerber
-  - [x] Use coil relays instead of SSR
+  - [x] Use coil relays instead of solid-state relays
   - [x] Support heat pumps
   - [x] Use LM2596 for power supply
   - [x] Improve filtering
@@ -81,14 +81,14 @@ Resulting variants:
   - [ ] Schematic
   - [ ] BOM
   - [ ] Gerber
-  - [ ] Use coil relays instead of SSR
+  - [ ] Use coil relays instead of solid-state relays
   - [ ] Support heat pumps
   - [ ] Improve filtering
 - [ ] Develop DevKit-HVAC
   - [ ] Schematic
   - [ ] BOM
   - [ ] Gerber
-  - [ ] Use coil relays instead of SSR
+  - [ ] Use coil relays instead of solid-state relays
   - [ ] Support heat pumps
   - [ ] Use LM2596 for power supply
   - [ ] Improve filtering

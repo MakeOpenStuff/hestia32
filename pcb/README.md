@@ -20,6 +20,33 @@ Resulting variants:
 
 ## History
 
+### XIAO-HVAC
+- `v1.5`:
+  - No funtional change
+  - Added LCD SDO (MISO) test point
+  - Changed label 3V3 to XIAO_3V3 to avoid users driving heavy loads
+- `v1.4`:
+  - Split versioning between HVAC and EU PCB designs
+  - Use LM2596HVS instead of LM2596S
+
+### XIAO-EU
+- `v1.5`:
+  - Fixed GND test point
+  - Increase track width for AC NETs
+- `v1.4`:
+  - No funtional change
+  - Added LCD SDO (MISO) test point
+  - Changed label 3V3 to XIAO_3V3 to avoid users driving heavy loads
+
+### Shared for both XIAO-HVAC and XIAO-EU
+- `v1.3`:
+  - XIAO-HVAC: Used coil relays instead of solid-state relays
+  - XIAO-HVAC: Used LM2596 for power supply
+  - XIAO-HVAC: Improved filtering
+  - XIAO-HVAC: Supported heat pumps
+  - XIAO-EU: Used coil relays instead of solid-state relays
+  - XIAO-EU: Improved filtering
+  - XIAO-EU: Supported heat pumps
 - `v1.2`:
   - Improve sensor location
 	- Improve via stitching
@@ -39,10 +66,17 @@ Resulting variants:
   - [x] Schematic
   - [x] BOM
   - [x] Gerber
+  - [x] Use coil relays instead of solid-state relays
+  - [x] Support heat pumps
+  - [x] Improve filtering
 - [x] Develop XIAO-HVAC
   - [x] Schematic
   - [x] BOM
   - [x] Gerber
+  - [x] Use coil relays instead of solid-state relays
+  - [x] Support heat pumps
+  - [x] Use LM2596 for power supply
+  - [x] Improve filtering
 - [x] Renumber components prefixes without gaps
 - [x] Add unpopulated additional GPIOs pins from port expander
 - [x] Increase clearance around holes in case user uses large metal screw or washer
@@ -50,7 +84,14 @@ Resulting variants:
   - [ ] Schematic
   - [ ] BOM
   - [ ] Gerber
+  - [ ] Use coil relays instead of solid-state relays
+  - [ ] Support heat pumps
+  - [ ] Improve filtering
 - [ ] Develop DevKit-HVAC
   - [ ] Schematic
   - [ ] BOM
   - [ ] Gerber
+  - [ ] Use coil relays instead of solid-state relays
+  - [ ] Support heat pumps
+  - [ ] Use LM2596 for power supply
+  - [ ] Improve filtering

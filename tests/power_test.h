@@ -14,6 +14,7 @@ extern "C" {
 #define RELAY2_GPIO 1
 #define RELAY3_GPIO 3
 #define RELAY4_GPIO 26
+#define RELAY5_GPIO 24
 
 // SHT45 I2C pins (using available GPIOs)
 #define SHT45_I2C_SDA 4

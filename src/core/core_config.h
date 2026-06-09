@@ -29,7 +29,7 @@
 #ifdef CONFIG_BOARD_TYPE_XIAO
 // XIAO: Relays controlled via TCA9555 I2C GPIO expander
 #define RELAY_USE_TCA9555       1
-#define RELAY_TCA9555_PIN_BASE  0  // Relays on TCA9555 pins 0-3
+#define RELAY_TCA9555_PIN_BASE  0  // Relays on TCA9555 pins 0-4 (via TBD62083)
 #else
 // DevKit: Relays controlled via direct GPIO
 #define RELAY_USE_TCA9555       0
@@ -37,9 +37,18 @@
 #define RELAY_GPIO_2            1   // Relay 2
 #define RELAY_GPIO_3            3   // Relay 3
 #define RELAY_GPIO_4            26  // Relay 4
+#define RELAY_GPIO_5            24  // Relay 5
 #endif
 
-#define RELAY_COUNT             4
+#define RELAY_COUNT             5
+
+#ifdef CONFIG_RELAY_ACTIVE_LOW
+#define RELAY_LEVEL_ON          0
+#define RELAY_LEVEL_OFF         1
+#else
+#define RELAY_LEVEL_ON          1
+#define RELAY_LEVEL_OFF         0
+#endif
 
 // OTA Internal RGB LED configuration
 // WS2812 RGB LED for OTA status feedback (blue=downloading, green=success, red=error)

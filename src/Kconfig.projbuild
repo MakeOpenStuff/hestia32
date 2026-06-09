@@ -27,6 +27,15 @@ menu "Hestia32 Configuration"
         bool
         default y if HESTIA32_BOARD_XIAO
 
+    config RELAY_ACTIVE_LOW
+        bool "Relay active-low outputs (LOW = ON, HIGH = OFF)"
+        default y
+        help
+            Select relay output polarity.
+            - Enabled: LOW turns relay ON, HIGH turns relay OFF.
+            - Disabled: HIGH turns relay ON, LOW turns relay OFF.
+            Set this to match your relay module input polarity.
+
     choice HESTIA32_PROTOCOL
         prompt "Communication Protocol"
         default HESTIA32_PROTOCOL_MQTT

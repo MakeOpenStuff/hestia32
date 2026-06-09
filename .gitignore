@@ -7,3 +7,5 @@ dependencies.lock
 # ESP-IDF generated config (do not commit)
 sdkconfig
 sdkconfig.old
+
+.gitignore.local

@@ -30,6 +30,9 @@ Resulting variants:
   - Use LM2596HVS instead of LM2596S
 
 ### XIAO-EU
+- `v1.5`:
+  - Fixed GND test point
+  - Increase track width for AC NETs
 - `v1.4`:
   - No funtional change
   - Added LCD SDO (MISO) test point

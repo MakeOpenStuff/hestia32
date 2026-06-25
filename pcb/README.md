@@ -21,6 +21,8 @@ Resulting variants:
 ## History
 
 ### XIAO-HVAC
+- `v1.6`:
+  - Optimise thermal properties (remove copper fill around sensor and add air gap)
 - `v1.5`:
   - No funtional change
   - Added LCD SDO (MISO) test point
@@ -30,6 +32,8 @@ Resulting variants:
   - Use LM2596HVS instead of LM2596S
 
 ### XIAO-EU
+- `v1.6`:
+  - Optimise thermal properties (remove copper fill around sensor and add air gap)
 - `v1.5`:
   - Fixed GND test point
   - Increase track width for AC NETs

@@ -10,8 +10,10 @@
 
 #include "core/core_config.h"
 #include "core/display_config.h"
+#ifdef CONFIG_PROTOCOL_MQTT
 #include "protocols/mqtt/mqtt_config.h"
 #include "protocols/mqtt/wifi_provisioning.h"
+#endif
 #include "core/protocol_manager.h"
 #include "core/display_manager.h"
 #include "core/display_ui.h"
@@ -230,9 +232,11 @@ display_clear_screen();  // Clear onboarding UI
 if (!is_provisioned) {
 /* Show provisioning UI with skip option */
 ESP_LOGI(TAG, "Device not provisioned. Starting provisioning AP...");
+#ifdef CONFIG_PROTOCOL_MQTT
 ESP_LOGI(TAG, "Connect to WiFi: %s", PROV_AP_SSID);
 ESP_LOGI(TAG, "Password: %s", PROV_AP_PASSWORD);
 ESP_LOGI(TAG, "Then open http://192.168.4.1 in your browser");
+#endif
 
 ret = protocol_manager_start_provisioning();
 if (ret != ESP_OK) {
@@ -255,8 +259,10 @@ while (1) {
 if (display_ui_provisioning_skip_pressed()) {
 ESP_LOGI(TAG, "User skipped WiFi provisioning - continuing without WiFi");
 				/* Stop provisioning AP and mark as skipped */
+#ifdef CONFIG_PROTOCOL_MQTT
 				wifi_prov_mark_skipped();
 				wifi_prov_stop_ap();
+#endif
 				break;
 			}
 			display_update();
@@ -277,9 +283,11 @@ ESP_LOGI(TAG, "Display initialized successfully");
 #else
 if (!is_provisioned) {
 ESP_LOGI(TAG, "Device not provisioned. Starting provisioning AP...");
+#ifdef CONFIG_PROTOCOL_MQTT
 ESP_LOGI(TAG, "Connect to WiFi: %s", PROV_AP_SSID);
 ESP_LOGI(TAG, "Password: %s", PROV_AP_PASSWORD);
 ESP_LOGI(TAG, "Then open http://192.168.4.1 in your browser");
+#endif
 
 ret = protocol_manager_start_provisioning();
 if (ret != ESP_OK) {

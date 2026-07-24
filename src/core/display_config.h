@@ -3,9 +3,9 @@
 
 #include "sdkconfig.h"
 
-// Display dimensions
-#define TFT_WIDTH  320
-#define TFT_HEIGHT 480
+// Display dimensions (landscape 480×320)
+#define TFT_WIDTH  480
+#define TFT_HEIGHT 320
 
 // SPI and touch pin mapping
 #ifdef CONFIG_BOARD_TYPE_XIAO
@@ -56,7 +56,7 @@
 // LVGL Configuration
 #define LVGL_TICK_PERIOD_MS 2
 #ifdef CONFIG_BOARD_TYPE_XIAO
-#define LVGL_BUFFER_HEIGHT  40  // Lower memory footprint + better coexistence with WiFi
+#define LVGL_BUFFER_HEIGHT  20  // Reduced: WiFi provisioning leaves <40KB free; 20 rows keeps total display buffers under 68KB
 #else
 #define LVGL_BUFFER_HEIGHT  80  // Higher throughput on DevKit
 #endif

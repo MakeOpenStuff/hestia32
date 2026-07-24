@@ -2,6 +2,9 @@
 #include "core/display_manager.h"
 #include "core/display_ui.h"
 #include "core/core_config.h"
+#include "core/user_settings.h"
+#include "core/ui/ui_theme.h"
+#include "core/ui/ui_settings_system.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_vendor.h"
 #include "esp_lcd_panel_ops.h"
@@ -26,8 +29,12 @@
 // Static reusable line buffer (RGB666) to avoid large allocations
 static uint8_t *s_line_rgb666 = NULL;
 static size_t s_line_rgb666_size = 0;
-// Keep conversion buffer modest to avoid starving WiFi driver allocations.
-#define RGB666_CHUNK_LINES 8
+/* RGB666 conversion buffer holds LVGL_BUFFER_HEIGHT rows at max width.
+ * Matching chunk lines to LVGL_BUFFER_HEIGHT means every flush region is
+ * converted and sent in a SINGLE RAMWR transaction per chunk — eliminating
+ * per-row CASET+PASET commands that can race with async DMA and cause a
+ * systematic 1-pixel-per-row shear on horizontal lines. */
+#define RGB666_CHUNK_LINES LVGL_BUFFER_HEIGHT
 
 static const char *TAG = "display";
 //TODO: Check timeouts for calibration and blocking WiFi provisioning screens
@@ -53,17 +60,80 @@ static lv_disp_draw_buf_t disp_buf;
 static lv_color_t *buf1 = NULL;
 static lv_color_t *buf2 = NULL;
 
+/* Called from ISR context when the SPI DMA transfer for tx_color completes.
+ * Signalling LVGL here (instead of immediately after tx_color returns) prevents
+ * the next flush_cb from overwriting s_line_rgb666 while DMA is still reading it,
+ * which manifested as random pixel corruption on horizontal edges. */
+static bool IRAM_ATTR lcd_trans_done_cb(esp_lcd_panel_io_handle_t panel_io,
+                                        esp_lcd_panel_io_event_data_t *edata,
+                                        void *user_ctx)
+{
+    (void)panel_io; (void)edata; (void)user_ctx;
+    lv_disp_flush_ready(&disp_drv);
+    return false; /* no higher-priority task woken */
+}
+
 // Limit LVGL handler cadence to reduce tearing
 static uint32_t s_last_handler_ms = 0;
 static volatile uint32_t s_flush_count = 0;
 // Touch
 static spi_device_handle_t s_touch_dev = NULL;
-static lv_obj_t *touch_dot = NULL;
 static TaskHandle_t s_lvgl_task_handle = NULL;
 static lv_indev_t *s_touch_indev = NULL;
+static lv_obj_t *s_touch_cursor = NULL;  /* Touch pointer visual indicator */
 static bool s_display_paused_for_ota = false;
 static bool s_backlight_ramp_started = false;
 static bool sSwapXY = false;
+
+/* ── Backlight sleep state ──────────────────────────────── */
+static volatile uint32_t s_last_touch_ms    = 0;   /* millis of last touch event  */
+static volatile bool     s_display_sleeping = false; /* true when dimmed to sleep bri */
+static volatile uint32_t s_wake_time_ms     = 0;   /* millis when display woke from sleep */
+static uint8_t           s_active_bri       = 80;  /* current target brightness %   */
+static uint8_t           s_sleep_bri        = 0;   /* sleep brightness %            */
+
+/* ── Forward declarations ────────────────────────────────── */
+static void run_touch_calibration(lv_obj_t *scr);
+static uint32_t          s_sleep_timeout_ms = 60000;/* default 60 s                  */
+#define WAKE_DEBOUNCE_MS 400  /* ignore touches for 400ms after waking */
+
+/* Set LEDC backlight duty from a 0-100 % value */
+static void backlight_set_pct(uint8_t pct)
+{
+    if (TFT_BL < 0) return;
+    uint32_t duty = ((uint32_t)pct * 255) / 100;
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
+}
+
+/* Called from touch callback or any user-interaction event to reset sleep timer */
+void display_notify_activity(void)
+{
+    s_last_touch_ms = lv_tick_get();
+    if (s_display_sleeping) {
+        s_display_sleeping = false;
+        s_wake_time_ms = lv_tick_get();  /* Record wake time for debounce */
+        backlight_set_pct(s_active_bri);
+    }
+}
+
+void display_reload_settings(void)
+{
+	display_settings_t ds;
+	if (display_settings_init() == ESP_OK && display_settings_get(&ds) == ESP_OK) {
+		s_active_bri       = ds.brightness;
+		s_sleep_bri        = ds.sleep_bri;
+		s_sleep_timeout_ms = (uint32_t)ds.sleep_timeout_sec * 1000;
+		ESP_LOGI(TAG, "Display settings reloaded: brightness=%d%%, sleep_bri=%d%%, sleep_timeout=%lums",
+		         (int)s_active_bri, (int)s_sleep_bri, s_sleep_timeout_ms);
+		// Apply active brightness immediately if not sleeping
+		if (!s_display_sleeping) {
+			backlight_set_pct(s_active_bri);
+		}
+	} else {
+		ESP_LOGE(TAG, "Failed to reload display settings from NVS");
+	}
+}
 static bool sFlipX = false;
 static bool sFlipY = false;
 static bool sCalibrated = false;
@@ -167,8 +237,19 @@ static void backlight_ramp_task(void *arg)
 		(void)arg;
 		vTaskDelay(pdMS_TO_TICKS(700));
 
-		ESP_LOGI(TAG, "Backlight gradual ramp start");
-		for (int duty = 0; duty <= 255; duty += 16) {
+		/* Load target brightness from NVS (default 80%) */
+		uint8_t target_pct = 80;
+		display_settings_t ds;
+		if (display_settings_init() == ESP_OK && display_settings_get(&ds) == ESP_OK) {
+				target_pct = ds.brightness;
+				s_active_bri       = ds.brightness;
+				s_sleep_bri        = ds.sleep_bri;
+				s_sleep_timeout_ms = (uint32_t)ds.sleep_timeout_sec * 1000;
+		}
+		uint32_t target_duty = ((uint32_t)target_pct * 255) / 100;
+
+		ESP_LOGI(TAG, "Backlight gradual ramp start (target %u%%)", target_pct);
+		for (uint32_t duty = 0; duty <= target_duty; duty += 16) {
 			esp_err_t ret = ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty);
 			if (ret != ESP_OK) {
 					ESP_LOGE(TAG, "Backlight ramp set_duty failed: %s", esp_err_to_name(ret));
@@ -181,6 +262,9 @@ static void backlight_ramp_task(void *arg)
 			}
 			vTaskDelay(pdMS_TO_TICKS(90));
 		}
+		/* Ensure we land exactly on target */
+		ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, target_duty);
+		ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
 
 		ESP_LOGI(TAG, "Backlight gradual ramp complete");
 		vTaskDelete(NULL);
@@ -203,10 +287,21 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t 
 		esp_lcd_panel_draw_bitmap(panel, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_map);
 #else
 
-		// Convert and flush in chunks to reduce per-line SPI transaction overhead.
+		/* Convert RGB565 → RGB666 and send in the fewest possible RAMWR transactions.
+		 * The old dummy UI never had a shear problem because it called draw_bitmap
+		 * ONCE for the entire flush area (XIAO safe-init path).  With lines_per_chunk=1
+		 * we issued one CASET+PASET+RAMWR per row; if the async DMA for row N was still
+		 * clocking bytes when the CASET command for row N+1 arrived, the ILI9488 could
+		 * consume those command bytes as pixel data, shifting every subsequent row by
+		 * 1–2 pixels — producing the systematic 1-pixel staircase on horizontal edges.
+		 * Fix: derive lines_per_chunk from the actual buffer size so the whole flush
+		 * area is sent in as few RAMWR calls as possible (ideally one). */
 		const uint16_t *src = (const uint16_t *)color_map;
 		size_t bytes_per_line = (size_t)width * 3;
-		int lines_per_chunk = 1; // Artifact-safe path: never reuse conversion buffer for multiple queued lines.
+		/* How many rows fit in the pre-allocated conversion buffer?
+		 * Handles the fallback case (1-line buffer) safely. */
+		int lines_per_chunk = (int)(s_line_rgb666_size / bytes_per_line);
+		if (lines_per_chunk < 1) lines_per_chunk = 1;
 
 		for (int y0 = 0; y0 < height; y0 += lines_per_chunk) {
 				int chunk_h = height - y0;
@@ -235,7 +330,11 @@ static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t 
 		}
 #endif
 		s_flush_count = s_flush_count + 1;
-		lv_disp_flush_ready(drv);
+		/* lv_disp_flush_ready is called from lcd_trans_done_cb (DMA completion ISR)
+		 * to guarantee s_line_rgb666 is not reused before DMA finishes. */
+#if XIAO_DISPLAY_SAFE_INIT
+		lv_disp_flush_ready(drv); /* safe-init path has no DMA callback */
+#endif
 }
 
 esp_err_t display_init(void)
@@ -360,6 +459,11 @@ esp_err_t display_init(void)
 		io_config.trans_queue_depth = 1;  // Artifact-safe: keep only one in-flight transfer.
 		io_config.lcd_cmd_bits = LCD_CMD_BITS;
 		io_config.lcd_param_bits = LCD_PARAM_BITS;
+		/* Signal LVGL only when DMA is fully done (not when tx_color returns).
+		 * Without this, the next flush_cb converts pixels into s_line_rgb666 while
+		 * the previous DMA is still reading from it, causing random corruption. */
+		io_config.on_color_trans_done = lcd_trans_done_cb;
+		io_config.user_ctx = NULL;
 		ESP_LOGI(TAG, "Display init step: panel IO");
 		ret = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)TFT_SPI_HOST, &io_config, &io_handle);
 		if (ret != ESP_OK) {
@@ -458,15 +562,15 @@ esp_err_t display_init(void)
 				}
 		}
 
-		// Orientation tweaks if needed (disable inversion for now)
-		ret = esp_lcd_panel_mirror(panel_handle, true, false);
-		if (ret != ESP_OK) {
-				ESP_LOGE(TAG, "Display init failed at panel_mirror: %s", esp_err_to_name(ret));
-				return ret;
-		}
-		ret = esp_lcd_panel_swap_xy(panel_handle, false);
+		// Landscape orientation: swap X/Y axes only — no mirroring needed
+		ret = esp_lcd_panel_swap_xy(panel_handle, true);
 		if (ret != ESP_OK) {
 				ESP_LOGE(TAG, "Display init failed at panel_swap_xy: %s", esp_err_to_name(ret));
+				return ret;
+		}
+		ret = esp_lcd_panel_mirror(panel_handle, false, false);
+		if (ret != ESP_OK) {
+				ESP_LOGE(TAG, "Display init failed at panel_mirror: %s", esp_err_to_name(ret));
 				return ret;
 		}
 		ret = esp_lcd_panel_invert_color(panel_handle, false);
@@ -486,6 +590,8 @@ esp_err_t display_init(void)
 
 		size_t buffer_size = TFT_WIDTH * LVGL_BUFFER_HEIGHT;
 		size_t lv_buf_bytes = buffer_size * sizeof(lv_color_t);
+		ESP_LOGI(TAG, "LVGL buffers: %u bytes each, free heap: %u",
+				(unsigned)lv_buf_bytes, (unsigned)esp_get_free_heap_size());
 		// LVGL draw buffers do not need DMA in this pipeline.
 		buf1 = (lv_color_t *)heap_caps_malloc(lv_buf_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 		if (!buf1) {
@@ -512,7 +618,17 @@ esp_err_t display_init(void)
 		disp_drv.flush_cb = lvgl_flush_cb;
 		disp_drv.draw_buf = &disp_buf;
 		disp_drv.user_data = panel_handle;
+		disp_drv.full_refresh = 1;
 		lv_disp_drv_register(&disp_drv);
+
+		/* Tell LVGL the display background is opaque.
+		 * Without this, partial-refresh dirty-region tracking can leave ghost
+		 * pixels from the previous screen when switching between screens. */
+		{
+				lv_disp_t *disp = lv_disp_get_default();
+				lv_disp_set_bg_color(disp, lv_color_hex(0x000000));
+				lv_disp_set_bg_opa(disp, LV_OPA_COVER);
+		}
 
 		// Register LVGL touch input device
 #if !XIAO_DISPLAY_SAFE_INIT
@@ -550,11 +666,22 @@ esp_err_t display_init(void)
 						if (raw_y > s_cal_y_max) raw_y = s_cal_y_max;
 
 						// Map to screen coordinates
-						int32_t x = (int32_t)(raw_x - s_cal_x_min) * (int32_t)(TFT_WIDTH - 1) / (int32_t)(s_cal_x_max - s_cal_x_min);
-						int32_t y = (int32_t)(raw_y - s_cal_y_min) * (int32_t)(TFT_HEIGHT - 1) / (int32_t)(s_cal_y_max - s_cal_y_min);
-
-						// Orientation adjustments
-						if (sSwapXY) { int32_t tmp = x; x = y; y = tmp; }
+						// Map raw touch to screen coordinates.
+						// IMPORTANT: integrate swap_xy into the scale factors.
+						// If we map raw_x→[0,TFT_WIDTH-1] and raw_y→[0,TFT_HEIGHT-1] and THEN swap,
+						// the X axis ends up scaled to TFT_HEIGHT (320) but LVGL expects TFT_WIDTH (480),
+						// causing 66% horizontal compression and 150% vertical expansion.
+						int32_t x, y;
+						if (sSwapXY) {
+								// physical X → screen Y  (scale to HEIGHT range)
+								// physical Y → screen X  (scale to WIDTH range)
+								x = (int32_t)(raw_y - s_cal_y_min) * (int32_t)(TFT_WIDTH  - 1) / (int32_t)(s_cal_y_max - s_cal_y_min);
+								y = (int32_t)(raw_x - s_cal_x_min) * (int32_t)(TFT_HEIGHT - 1) / (int32_t)(s_cal_x_max - s_cal_x_min);
+						} else {
+								x = (int32_t)(raw_x - s_cal_x_min) * (int32_t)(TFT_WIDTH  - 1) / (int32_t)(s_cal_x_max - s_cal_x_min);
+								y = (int32_t)(raw_y - s_cal_y_min) * (int32_t)(TFT_HEIGHT - 1) / (int32_t)(s_cal_y_max - s_cal_y_min);
+						}
+						// Flip corrections (swap already integrated above)
 						if (sFlipX) { x = (TFT_WIDTH - 1) - x; }
 						if (sFlipY) { y = (TFT_HEIGHT - 1) - y; }
 
@@ -570,25 +697,61 @@ esp_err_t display_init(void)
 								y = (TFT_HEIGHT - 1);
 						}
 
-						data->point.x = (lv_coord_t)x;
-						data->point.y = (lv_coord_t)y;
-						data->state = LV_INDEV_STATE_PR;
+				/* ── Backlight sleep: wake on first touch, swallow event ── */
+				if (s_display_sleeping) {
+						display_notify_activity();
+						data->state = LV_INDEV_STATE_REL; /* swallow — don't send to UI */
+						return;
+				}
+			/* Debounce: ignore touches for 400ms after waking to prevent same physical touch
+			 * from registering button presses (a single human touch generates multiple events) */
+			uint32_t now_ms = lv_tick_get();
+			if (s_wake_time_ms > 0 && (now_ms - s_wake_time_ms) < WAKE_DEBOUNCE_MS) {
+					data->state = LV_INDEV_STATE_REL; /* swallow during debounce period */
+					return;
+			}
+			display_notify_activity();
 
-						// Debug: print mapping on touch (reduced frequency)
-						static uint32_t s_last_touch_log = 0;
-						uint32_t now_ms = lv_tick_get();
-						if (now_ms - s_last_touch_log > 1000) {
-								ESP_LOGI(TAG, "touch raw:(%u,%u) clamped:(%u,%u) mapped:(%d,%d)",
-												 (unsigned)raw_x0, (unsigned)raw_y0,
-												 (unsigned)raw_x, (unsigned)raw_y,
-												 (int)x, (int)y);
-								s_last_touch_log = now_ms;
-						}
-				};
-				s_touch_indev = lv_indev_drv_register(&indev_drv);
+				data->point.x = (lv_coord_t)x;
+				data->point.y = (lv_coord_t)y;
+				data->state = LV_INDEV_STATE_PR;
+
+				// Debug: print mapping on touch (reduced frequency)
+				static uint32_t s_touch_log_ms = 0;
+				if (now_ms - s_touch_log_ms > 1000) {
+						ESP_LOGI(TAG, "touch raw:(%u,%u) clamped:(%u,%u) mapped:(%d,%d)",
+										 (unsigned)raw_x0, (unsigned)raw_y0,
+										 (unsigned)raw_x, (unsigned)raw_y,
+										 (int)x, (int)y);
+						s_touch_log_ms = now_ms;
+				}
+		};
+		s_touch_indev = lv_indev_drv_register(&indev_drv);
+
+		/* Create touch pointer visual indicator (themed, controlled by show_pointer setting) */
+		s_touch_cursor = lv_obj_create(lv_layer_top());
+		lv_obj_set_size(s_touch_cursor, 10, 10);
+
+		/* Use themed primary color for visibility */
+		const hestia_theme_t *theme = ui_theme_get();
+		lv_obj_set_style_bg_color(s_touch_cursor, lv_color_hex(theme->primary), 0);
+		lv_obj_set_style_bg_opa(s_touch_cursor, LV_OPA_70, 0);
+		lv_obj_set_style_border_color(s_touch_cursor, lv_color_hex(theme->text), 0);
+		lv_obj_set_style_border_width(s_touch_cursor, 1, 0);
+		lv_obj_set_style_radius(s_touch_cursor, LV_RADIUS_CIRCLE, 0);
+		lv_obj_set_style_pad_all(s_touch_cursor, 0, 0);
+		lv_obj_clear_flag(s_touch_cursor, LV_OBJ_FLAG_CLICKABLE);
+		lv_indev_set_cursor(s_touch_indev, s_touch_cursor);
+
+		/* Initialize visibility based on device config */
+		device_config_t cfg;
+		if (device_config_get(&cfg) == ESP_OK && cfg.show_pointer) {
+			lv_obj_clear_flag(s_touch_cursor, LV_OBJ_FLAG_HIDDEN);
+			ESP_LOGI(TAG, "Touch pointer enabled at boot");
+		} else {
+			lv_obj_add_flag(s_touch_cursor, LV_OBJ_FLAG_HIDDEN);
 		}
-#else
-		ESP_LOGW(TAG, "XIAO safe init: touch input disabled");
+		}
 #endif
 
 		ESP_LOGI(TAG, "Display initialized successfully (LVGL enabled)");
@@ -630,26 +793,88 @@ void display_clear_screen(void)
 		lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(0x000000), 0);
 }
 
+// State to restore pointer visibility after recalibration
+static bool s_pointer_was_visible = false;
+
+// Timer callback to return to system settings after recalibration
+static void recalibration_return_cb(lv_timer_t *timer)
+{
+	ESP_LOGI(TAG, "Returning to System Settings after recalibration");
+
+	// Restore pointer visibility to state before calibration
+	if (s_pointer_was_visible) {
+		display_set_touch_pointer_visible(true);
+	}
+
+	ui_settings_system_open();
+}
+
+void display_recalibrate(void)
+{
+	ESP_LOGI(TAG, "Recalibration requested from UI");
+
+	// Save current pointer visibility state and hide it during calibration
+	s_pointer_was_visible = (s_touch_cursor != NULL && !lv_obj_has_flag(s_touch_cursor, LV_OBJ_FLAG_HIDDEN));
+	if (s_pointer_was_visible) {
+		display_set_touch_pointer_visible(false);
+		ESP_LOGI(TAG, "Pointer hidden for calibration (will restore after)");
+	}
+
+	run_touch_calibration(lv_scr_act());
+
+	// Show brief completion message
+	lv_obj_clean(lv_scr_act());
+	lv_obj_t *msg = lv_label_create(lv_scr_act());
+	lv_label_set_text(msg, "Calibration complete!");
+	lv_obj_set_style_text_font(msg, &lv_font_montserrat_20, 0);
+	lv_obj_center(msg);
+	lv_refr_now(NULL);
+
+	// Brief delay, then return to system settings screen (will restore pointer)
+	lv_timer_t *timer = lv_timer_create(recalibration_return_cb, 500, NULL);
+	lv_timer_set_repeat_count(timer, 1);
+
+	ESP_LOGI(TAG, "Return to settings scheduled");
+}
+
 		static void run_touch_calibration(lv_obj_t *scr)
 		{
 				ESP_LOGI(TAG, "Starting touch calibration (60 second timeout)");
+				const hestia_theme_t *t = ui_theme_get();
 
-				// Clear screen and set black background for wizard
+				// Clear screen and set theme background
 				lv_obj_clean(scr);
-				lv_obj_set_style_bg_color(scr, lv_color_hex(0x000000), 0);
+				lv_obj_set_style_bg_color(scr, lv_color_hex(t->bg), 0);
 
+				// Force screen update to show background
+				lv_refr_now(NULL);
+
+				// Title
+				lv_obj_t *title = lv_label_create(scr);
+				lv_label_set_text(title, "Touch Calibration");
+				lv_obj_set_style_text_color(title, lv_color_hex(t->text), 0);
+				lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+				lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 20);
+
+				// Instruction message
 				lv_obj_t *msg = lv_label_create(scr);
 				lv_label_set_text(msg, "Touch target 1/5 (60s remaining)");
-				lv_obj_set_style_text_color(msg, lv_color_hex(0xFFFFFF), 0);
-				lv_obj_align(msg, LV_ALIGN_TOP_MID, 0, 8);
+				lv_obj_set_style_text_color(msg, lv_color_hex(t->text_secondary), 0);
+				lv_obj_set_style_text_font(msg, &lv_font_montserrat_16, 0);
+				lv_obj_align(msg, LV_ALIGN_TOP_MID, 0, 60);
 
-				// Target marker objects (crosshair)
+				// Target marker objects (crosshair with primary color)
 				lv_obj_t *marker_h = lv_obj_create(scr);
 				lv_obj_t *marker_v = lv_obj_create(scr);
-				lv_obj_set_style_bg_color(marker_h, lv_color_hex(0xFFFFFF), 0);
-				lv_obj_set_style_bg_color(marker_v, lv_color_hex(0xFFFFFF), 0);
+				lv_obj_set_style_bg_color(marker_h, lv_color_hex(t->primary), 0);
+				lv_obj_set_style_bg_color(marker_v, lv_color_hex(t->primary), 0);
+				lv_obj_set_style_border_width(marker_h, 0, 0);
+				lv_obj_set_style_border_width(marker_v, 0, 0);
 				lv_obj_set_size(marker_h, 20, 2);
 				lv_obj_set_size(marker_v, 2, 20);
+
+				// Force immediate render of calibration UI
+				lv_refr_now(NULL);
 
 				struct Target { int x; int y; };
 				Target targets[5] = {
@@ -670,8 +895,11 @@ void display_clear_screen(void)
 				for (int i = 0; i < 5; i++) {
 						lv_obj_set_pos(marker_h, targets[i].x - 10, targets[i].y - 1);
 						lv_obj_set_pos(marker_v, targets[i].x - 1, targets[i].y - 10);
-						// Force a refresh to ensure marker is visible
-						lv_timer_handler();
+
+						// Force immediate refresh to show marker at new position
+						lv_refr_now(NULL);
+
+						ESP_LOGI(TAG, "Waiting for touch on target %d at (%d, %d)", i + 1, targets[i].x, targets[i].y);
 
 						// Wait until pressed (IRQ low or raw threshold)
 								{
@@ -685,6 +913,7 @@ void display_clear_screen(void)
 														char buf[64];
 														snprintf(buf, sizeof(buf), "Touch target %d/5 (%us remaining)", i + 1, (unsigned)remaining_sec);
 														lv_label_set_text(msg, buf);
+														lv_refr_now(NULL);  // Force update of countdown
 														last_countdown_update = lv_tick_get();
 												}
 
@@ -861,7 +1090,11 @@ void display_create_ui(bool skip_calibration, bool provisioning_mode)
 		if (provisioning_mode) {
 				display_ui_create_provisioning(lv_scr_act());
 		} else {
-				display_ui_create_main(lv_scr_act(), &touch_dot, &s_flush_count);
+				/* Create main UI on a new hidden screen for smooth transition */
+				lv_obj_t *new_scr = lv_obj_create(NULL);
+				display_ui_create_main(new_scr);
+				/* Atomically switch to the fully-prepared screen */
+				lv_scr_load(new_scr);
 		}
 }
 
@@ -869,6 +1102,17 @@ void display_create_ui(bool skip_calibration, bool provisioning_mode)
 static void lvgl_task(void *arg)
 {
 		ESP_LOGI(TAG, "LVGL task started on core %d", xPortGetCoreID());
+
+		/* Load display sleep settings from NVS */
+		{
+				display_settings_t ds;
+				if (display_settings_init() == ESP_OK && display_settings_get(&ds) == ESP_OK) {
+						s_active_bri       = ds.brightness;
+						s_sleep_bri        = ds.sleep_bri;
+						s_sleep_timeout_ms = (uint32_t)ds.sleep_timeout_sec * 1000;
+				}
+		}
+		s_last_touch_ms = lv_tick_get();
 
 		while (1) {
 				if (s_display_paused_for_ota) {
@@ -879,17 +1123,16 @@ static void lvgl_task(void *arg)
 				// Call LVGL timer handler
 				lv_timer_handler();
 
-				// Update touch dot visibility/position if pressed
-				if (s_touch_indev && touch_dot) {
-						if (s_touch_indev->proc.state == LV_INDEV_STATE_PRESSED) {
-								lv_point_t p;
-								lv_indev_get_point(s_touch_indev, &p);
-								lv_obj_clear_flag(touch_dot, LV_OBJ_FLAG_HIDDEN);
-								lv_obj_set_pos(touch_dot, p.x - 5, p.y - 5);
-						} else {
-								lv_obj_add_flag(touch_dot, LV_OBJ_FLAG_HIDDEN);
+				/* ── Backlight sleep check (every tick, cheap) ──────── */
+				if (!s_display_sleeping && s_sleep_timeout_ms > 0) {
+						uint32_t idle = lv_tick_get() - s_last_touch_ms;
+						if (idle >= s_sleep_timeout_ms) {
+								s_display_sleeping = true;
+								backlight_set_pct(s_sleep_bri);
 						}
 				}
+
+// Touch indicator is now managed by ui_main internally
 
 				// Run near ~20 FPS target; actual FPS depends on flush cost.
 				vTaskDelay(pdMS_TO_TICKS(30));
@@ -912,6 +1155,22 @@ void display_start_lvgl_task(void)
 		} else {
 				ESP_LOGI(TAG, "LVGL task created successfully");
 		}
+}
+
+void display_set_touch_pointer_visible(bool visible)
+{
+	if (s_touch_cursor == NULL) {
+		ESP_LOGW(TAG, "Touch cursor not initialized");
+		return;
+	}
+
+	if (visible) {
+		lv_obj_clear_flag(s_touch_cursor, LV_OBJ_FLAG_HIDDEN);
+		ESP_LOGI(TAG, "Touch pointer shown");
+	} else {
+		lv_obj_add_flag(s_touch_cursor, LV_OBJ_FLAG_HIDDEN);
+		ESP_LOGI(TAG, "Touch pointer hidden");
+	}
 }
 
 /**
@@ -1247,15 +1506,5 @@ void display_update(void)
 				s_last_handler_ms = now_ms;
 		}
 
-		// Update touch dot visibility/position if pressed
-		if (s_touch_indev && touch_dot) {
-				if (s_touch_indev->proc.state == LV_INDEV_STATE_PRESSED) {
-						lv_point_t p;
-						lv_indev_get_point(s_touch_indev, &p);
-						lv_obj_clear_flag(touch_dot, LV_OBJ_FLAG_HIDDEN);
-						lv_obj_set_pos(touch_dot, p.x - 5, p.y - 5);
-				} else {
-						lv_obj_add_flag(touch_dot, LV_OBJ_FLAG_HIDDEN);
-				}
-		}
+		// Touch indicator is managed internally by ui_main
 }

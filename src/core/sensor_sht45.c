@@ -48,34 +48,28 @@ esp_err_t sht45_init(int scl_pin, int sda_pin) {
 				.master.clk_speed = I2C_MASTER_FREQ_HZ,
 		};
 
-	// Check if driver is already installed
-	esp_err_t ret = i2c_driver_install(I2C_MASTER_NUM, conf.mode, 0, 0, 0);
-
-	if (ret == ESP_FAIL || ret == ESP_ERR_INVALID_STATE) {
-		// Driver already installed - delete and reinstall with our pins
-		ESP_LOGI(TAG, "I2C driver already installed, reconfiguring for SCL=%d, SDA=%d", scl_pin, sda_pin);
-		i2c_driver_delete(I2C_MASTER_NUM);
-		vTaskDelay(pdMS_TO_TICKS(50));
-	}
-
-	// Configure I2C parameters BEFORE installing driver
-	ret = i2c_param_config(I2C_MASTER_NUM, &conf);
-	if (ret != ESP_OK) {
+	/* Try to install I2C driver - if already installed by TCA9555, that's OK */
+	esp_err_t ret = i2c_param_config(I2C_MASTER_NUM, &conf);
+	if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
 		ESP_LOGE(TAG, "I2C param config failed: %s", esp_err_to_name(ret));
 		return ret;
 	}
 
-	// Now install the driver with configured parameters
 	ret = i2c_driver_install(I2C_MASTER_NUM, conf.mode, 0, 0, 0);
-	if (ret != ESP_OK) {
+	if (ret == ESP_OK) {
+		ESP_LOGI(TAG, "I2C driver installed on SCL=%d, SDA=%d", scl_pin, sda_pin);
+	} else if (ret == ESP_ERR_INVALID_STATE || ret == ESP_FAIL) {
+		/* Driver already installed (probably by TCA9555/relay manager) - this is OK */
+		/* Note: Some ESP-IDF versions return ESP_FAIL instead of ESP_ERR_INVALID_STATE */
+		ESP_LOGI(TAG, "Using existing I2C driver (already initialized, code: %s)", esp_err_to_name(ret));
+		ret = ESP_OK;  // Treat as success
+	} else {
 		ESP_LOGE(TAG, "I2C driver install failed: %s", esp_err_to_name(ret));
 		return ret;
 	}
 
-	ESP_LOGI(TAG, "I2C driver initialized on SCL=%d, SDA=%d", scl_pin, sda_pin);
-
-	// Wait for sensor to be ready
-	vTaskDelay(pdMS_TO_TICKS(10));
+	// Wait for I2C bus to stabilize
+	vTaskDelay(pdMS_TO_TICKS(50));
 
 	// Try to communicate with sensor
 	if (!sht45_is_available()) {

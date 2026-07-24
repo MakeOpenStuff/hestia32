@@ -1,0 +1,49 @@
+			}
+			if (!model_saved) {
+					/* First-ever boot: write Kconfig default */
+#ifdef CONFIG_HESTIA32_MODEL_EU
+					device_config_t cfg;
+					device_config_get(&cfg);
+					cfg.model = DEVICE_MODEL_EU;
+					cfg.domain_mask = (1<<0)|(1<<4);
+					cfg.relay_map[0] = 0; cfg.relay_map[4] = 1;
+					device_config_save(&cfg);
+				/* EU model defaults to Celsius */
+				user_settings_init();
+				user_settings_set_temp_unit(TEMP_UNIT_CELSIUS);
+
+				/* Set EU default setpoints: 22°C heat, 24°C cool */
+				thermostat_settings_init();
+				{
+					thermostat_settings_t ts;
+					thermostat_settings_get(&ts);
+					ts.heat_setpoint_c = 22.0f;
+					ts.cool_setpoint_c = 24.0f;
+					thermostat_settings_save(&ts);
+					ESP_LOGI(TAG, "EU model: setpoints set to 22°C / 24°C");
+				}
+#else
+				device_config_t cfg;
+				device_config_get(&cfg);
+				cfg.model = DEVICE_MODEL_HVAC;
+				cfg.domain_mask = (1<<0)|(1<<2)|(1<<4);
+				cfg.relay_map[0] = 2; cfg.relay_map[2] = 0; cfg.relay_map[4] = 4;
+				device_config_save(&cfg);
+				/* HVAC model defaults to Fahrenheit */
+				user_settings_init();
+				user_settings_set_temp_unit(TEMP_UNIT_FAHRENHEIT);
+
+				/* Set HVAC default setpoints: 72°F heat (22.2°C), 75°F cool (23.9°C) */
+				thermostat_settings_init();
+				{
+					thermostat_settings_t ts;
+					thermostat_settings_get(&ts);
+					ts.heat_setpoint_c = 22.2f;  // 72°F
+					ts.cool_setpoint_c = 23.9f;  // 75°F
+					thermostat_settings_save(&ts);
+					ESP_LOGI(TAG, "HVAC model: setpoints set to 72°F / 75°F (22.2°C / 23.9°C)");
+				}
+#endif
+				ESP_LOGI(TAG, "First boot: device model initialized from Kconfig default");
+		}
+	}

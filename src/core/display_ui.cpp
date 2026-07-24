@@ -1,147 +1,139 @@
 #include "core/display_ui.h"
-#include "core/display_config.h"
+#include "core/ui/ui_main.h"
+#include "core/ui/ui_theme.h"
+#include "core/user_settings.h"
 #include "esp_log.h"
 #include <stdio.h>
 
 static const char *TAG = "display_ui";
-static lv_obj_t *s_sensor_label = NULL;  // Sensor data label
+static bool s_provisioning_skip = false;
 
-// Sensor data cache for thread-safe updates
-static struct {
-		float temperature;
-		float humidity;
-		bool is_celsius;
-		bool has_data;
-} s_sensor_data = {0};
+static void on_skip_wifi(lv_event_t *e)
+{
+		ESP_LOGI(TAG, "Skip WiFi button pressed");
+		s_provisioning_skip = true;
+}
 
 void display_ui_create_provisioning(lv_obj_t *scr)
 {
-		ESP_LOGI(TAG, "Creating minimal provisioning UI");
+		ESP_LOGI(TAG, "Creating provisioning UI with skip option");
+		s_provisioning_skip = false;
+		const hestia_theme_t *t = ui_theme_get();
 
-		lv_obj_set_style_bg_color(scr, lv_color_hex(0x101820), 0);
+		lv_obj_set_style_bg_color(scr, lv_color_hex(t->bg), 0);
 
+		/* Title */
+		lv_obj_t *title = lv_label_create(scr);
+		lv_label_set_text(title, "WiFi Setup");
+		lv_obj_set_style_text_color(title, lv_color_hex(t->text), 0);
+		lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+		lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 20);
+
+		/* Subtitle */
+		lv_obj_t *subtitle = lv_label_create(scr);
+		lv_label_set_text(subtitle, "Optional - Configure WiFi network");
+		lv_obj_set_style_text_color(subtitle, lv_color_hex(t->text_secondary), 0);
+		lv_obj_set_style_text_font(subtitle, &lv_font_montserrat_14, 0);
+		lv_obj_align(subtitle, LV_ALIGN_TOP_MID, 0, 55);
+
+		/* Instructions */
 		lv_obj_t *label = lv_label_create(scr);
-		lv_label_set_text(label, "WiFi Setup Required\n\n"
-														 "Connect to: HESTIA32\n"
-														 "Open: 192.168.4.1\n\n"
-														 "Device will restart\nafter configuration");
-		lv_obj_set_style_text_color(label, lv_color_hex(0xFFFFFF), 0);
+		lv_label_set_text(label, "1. Connect to WiFi: HESTIA32\n\n"
+											 "2. Open browser: 192.168.4.1\n\n"
+											 "3. Enter your WiFi credentials\n\n"
+											 "Device will restart after setup");
+		lv_obj_set_style_text_color(label, lv_color_hex(t->text), 0);
 		lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+		lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
 		lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+
+		/* Skip button */
+		lv_obj_t *skip_btn = lv_btn_create(scr);
+		lv_obj_set_size(skip_btn, 200, 50);
+	lv_obj_set_style_bg_color(skip_btn, lv_color_hex(t->primary), 0);
+	lv_obj_set_style_radius(skip_btn, 8, 0);
+	lv_obj_set_style_shadow_width(skip_btn, 0, 0);
+	lv_obj_align(skip_btn, LV_ALIGN_BOTTOM_MID, 0, -20);
+	lv_obj_add_event_cb(skip_btn, on_skip_wifi, LV_EVENT_CLICKED, NULL);
+
+	lv_obj_t *skip_label = lv_label_create(skip_btn);
+	lv_label_set_text(skip_label, "Setup WiFi later...");
+	lv_obj_set_style_text_color(skip_label, lv_color_hex(t->on_primary), 0);
+		lv_obj_set_style_text_font(skip_label, &lv_font_montserrat_16, 0);
+	lv_obj_align(skip_label, LV_ALIGN_CENTER, 0, 0);
 }
 
-void display_ui_create_main(lv_obj_t *scr, lv_obj_t **touch_dot, volatile uint32_t *flush_count)
+bool display_ui_provisioning_skip_pressed(void)
 {
-		ESP_LOGI(TAG, "Creating full main UI");
+	return s_provisioning_skip;
+}
 
-		lv_obj_set_style_bg_color(scr, lv_color_hex(0x101820), 0);
+/* ── Diagnostic test pattern ────────────────────────────────────────────
+ * Draws 8 solid-colour horizontal bands (no text, no icons, no widgets).
+ * Each band has hard top/bottom pixel edges. If ANY band edge shows a
+ * 1-pixel staircase the issue is in the driver flush path, not in LVGL
+ * widget rendering.  Bands are static — no timers, no redraws.
+ * Re-enable ui_main_create(scr) below once the driver is confirmed clean.
+ * ----------------------------------------------------------------------- */
+#define TEST_PATTERN_ENABLED 0
 
-		// Create grid of colorful tiles
-		int cols = 4, rows = 6;
-		int tile_w = TFT_WIDTH / cols;
-		int tile_h = TFT_HEIGHT / rows;
-		uint32_t colors[8] = {0x2364AA, 0x3DA5D9, 0x73BFB8, 0xFEC601,
-												 0xEA7317, 0x6C2E2F, 0x8A2BE2, 0x2ECC71};
-		int ci = 0;
+#if TEST_PATTERN_ENABLED
+static void create_test_pattern(lv_obj_t *scr)
+{
+    static const uint32_t colors[] = {
+        0xFF0000, /* red    */
+        0xFF8000, /* orange */
+        0xFFFF00, /* yellow */
+        0x00FF00, /* green  */
+        0x00FFFF, /* cyan   */
+        0x0000FF, /* blue   */
+        0xFF00FF, /* magenta*/
+        0xFFFFFF, /* white  */
+    };
+    const int n = sizeof(colors) / sizeof(colors[0]);
+    const int h = 320 / n;   /* exact band height: 40px each */
 
-		for (int y = 0; y < rows; y++) {
-				for (int x = 0; x < cols; x++) {
-						lv_obj_t *tile = lv_obj_create(scr);
-						lv_obj_set_size(tile, tile_w - 2, tile_h - 2);
-						lv_obj_set_style_bg_color(tile, lv_color_hex(colors[ci % 8]), 0);
-						lv_obj_set_style_radius(tile, 6, 0);
-						lv_obj_set_pos(tile, x * tile_w + 1, y * tile_h + 1);
-						ci++;
-				}
-		}
+    lv_obj_set_style_bg_color(scr, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
 
-		// Create animated bar
-		lv_obj_t *bar = lv_obj_create(scr);
-		lv_obj_set_size(bar, 20, TFT_HEIGHT - 40);
-		lv_obj_set_style_bg_color(bar, lv_color_hex(0xFFFFFF), 0);
-		lv_obj_set_pos(bar, 10, 20);
+    for (int i = 0; i < n; i++) {
+        lv_obj_t *band = lv_obj_create(scr);
+        lv_obj_set_pos(band, 0, i * h);
+        lv_obj_set_size(band, 480, h);
+        lv_obj_set_style_bg_color(band, lv_color_hex(colors[i]), 0);
+        lv_obj_set_style_bg_opa(band, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(band, 0, 0);
+        lv_obj_set_style_pad_all(band, 0, 0);
+        lv_obj_set_style_radius(band, 0, 0);
+        lv_obj_clear_flag(band, LV_OBJ_FLAG_SCROLLABLE);
+    }
+}
+#endif /* TEST_PATTERN_ENABLED */
 
-		// Animation wrapper to avoid cast warning
-		auto anim_set_x = [](void* obj, int32_t v) {
-				lv_obj_set_x((lv_obj_t*)obj, (lv_coord_t)v);
-		};
+void display_ui_create_main(lv_obj_t *scr)
+{
+#if TEST_PATTERN_ENABLED
+    ESP_LOGI(TAG, "Creating diagnostic test pattern (TEST_PATTERN_ENABLED=1)");
+    create_test_pattern(scr);
+#else
+    /* Load the saved theme before building any UI widgets so all inline
+     * lv_obj_set_style_* calls use the correct colour palette. */
+    ui_theme_apply(device_config_get_theme());
+    ESP_LOGI(TAG, "Creating main UI (theme=%d)", (int)device_config_get_theme());
+    ui_main_create(scr);
 
-		lv_anim_t a;
-		lv_anim_init(&a);
-		lv_anim_set_var(&a, bar);
-		lv_anim_set_values(&a, 10, TFT_WIDTH - 30);
-		lv_anim_set_time(&a, 6000);
-		lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
-		lv_anim_set_exec_cb(&a, anim_set_x);
-		lv_anim_start(&a);
-
-		// Create FPS counter
-		lv_obj_t *fps = lv_label_create(scr);
-		lv_label_set_text(fps, "FPS:");
-		lv_obj_set_style_text_color(fps, lv_color_hex(0xFFFFFF), 0);
-		lv_obj_align(fps, LV_ALIGN_TOP_LEFT, 8, 8);
-
-		// Create sensor data label below FPS
-		s_sensor_label = lv_label_create(scr);
-		lv_label_set_text(s_sensor_label, "--.-C --%");
-		lv_obj_set_style_text_color(s_sensor_label, lv_color_hex(0x73BFB8), 0);  // Cyan color
-		lv_obj_align(s_sensor_label, LV_ALIGN_TOP_LEFT, 8, 28);
-
-		// FPS update timer
-		static uint32_t last_t = 0;
-		struct TimerData {
-				lv_obj_t *label;
-				volatile uint32_t *flush_count;
-		};
-
-		static TimerData timer_data;
-		timer_data.label = fps;
-		timer_data.flush_count = flush_count;
-
-		lv_timer_t *tmr = lv_timer_create([](lv_timer_t *t) {
-				TimerData *data = (TimerData*)t->user_data;
-				uint32_t now = lv_tick_get();
-				if (now - last_t >= 1000) {
-						char buf[32];
-						lv_snprintf(buf, sizeof(buf), "FPS:%lu", (unsigned long)*(data->flush_count));
-						lv_label_set_text(data->label, buf);
-						*(data->flush_count) = 0;
-						last_t = now;
-
-						// Update sensor label if we have data
-						if (s_sensor_data.has_data && s_sensor_label != NULL) {
-								char sensor_buf[32];
-								char unit = s_sensor_data.is_celsius ? 'C' : 'F';
-								int temp_int = (int)s_sensor_data.temperature;
-								int temp_dec = (int)((s_sensor_data.temperature - temp_int) * 10);
-								int hum_int = (int)s_sensor_data.humidity;
-								lv_snprintf(sensor_buf, sizeof(sensor_buf), "%d.%d%c %d%%", temp_int, temp_dec, unit, hum_int);
-								lv_label_set_text(s_sensor_label, sensor_buf);
-						}
-				}
-		}, 16, &timer_data);
-		(void)tmr;
-
-		// Create touch dot indicator (create LAST so it's on top)
-		*touch_dot = lv_obj_create(scr);
-		lv_obj_set_style_bg_color(*touch_dot, lv_color_hex(0xFF00FF), 0);
-		lv_obj_set_style_bg_opa(*touch_dot, LV_OPA_COVER, 0);
-		lv_obj_set_style_border_width(*touch_dot, 2, 0);
-		lv_obj_set_style_border_color(*touch_dot, lv_color_hex(0xFFFFFF), 0);
-		lv_obj_set_size(*touch_dot, 16, 16);
-		lv_obj_set_style_radius(*touch_dot, 8, 0);
-		lv_obj_add_flag(*touch_dot, LV_OBJ_FLAG_HIDDEN);
-		lv_obj_add_flag(*touch_dot, LV_OBJ_FLAG_FLOATING); // Always on top
-		lv_obj_clear_flag(*touch_dot, LV_OBJ_FLAG_CLICKABLE); // Don't block touches
-
-		ESP_LOGI(TAG, "UI creation complete");
+    /* Force LVGL to complete all layout calculations immediately to prevent
+     * visual glitches during screen transitions (e.g., from provisioning) */
+    lv_obj_update_layout(scr);
+#endif
 }
 
 void display_ui_update_sensor(float temperature, float humidity, bool is_celsius)
 {
-		// Just store the data - actual update happens in LVGL timer
-		s_sensor_data.temperature = temperature;
-		s_sensor_data.humidity = humidity;
-		s_sensor_data.is_celsius = is_celsius;
-		s_sensor_data.has_data = true;
+#if !TEST_PATTERN_ENABLED
+    ui_main_update_sensor(temperature, humidity, is_celsius);
+#else
+    (void)temperature; (void)humidity; (void)is_celsius;
+#endif
 }

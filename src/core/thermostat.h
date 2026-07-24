@@ -57,10 +57,17 @@ extern "C" {
 // ENUMERATIONS
 // ============================================================================
 
+/* TempUnit is also defined in user_settings.h as temp_unit_t with the same
+ * enumerator names.  Guard against redeclaration when both headers are pulled
+ * into the same translation unit. */
+#ifndef TEMP_UNIT_DEFINED
+#define TEMP_UNIT_DEFINED
 typedef enum {
 		TEMP_UNIT_CELSIUS,
 		TEMP_UNIT_FAHRENHEIT
 } TempUnit;
+typedef TempUnit temp_unit_t;  /* alias so ThermostatConfig uses one type */
+#endif
 
 typedef enum {
 		COMFORT_MODE_COMFORT,
@@ -83,7 +90,7 @@ typedef struct {
 } BoostConfig;
 
 typedef struct {
-	TempUnit temp_unit;
+	temp_unit_t temp_unit;
 	ComfortMode comfort_mode;
 	HumidityMode humidity_mode;
 

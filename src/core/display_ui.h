@@ -9,13 +9,11 @@ extern "C" {
 #endif
 
 /**
- * @brief Create the main application UI with tiles and animations
+ * @brief Create the main application UI (3-pane landscape layout)
  *
  * @param scr The LVGL screen object to create UI on
- * @param touch_dot Pointer to touch dot object (will be created and assigned)
- * @param flush_count Pointer to flush counter for FPS display
  */
-void display_ui_create_main(lv_obj_t *scr, lv_obj_t **touch_dot, volatile uint32_t *flush_count);
+void display_ui_create_main(lv_obj_t *scr);
 
 /**
  * @brief Create minimal provisioning UI showing WiFi setup instructions
@@ -23,6 +21,13 @@ void display_ui_create_main(lv_obj_t *scr, lv_obj_t **touch_dot, volatile uint32
  * @param scr The LVGL screen object to create UI on
  */
 void display_ui_create_provisioning(lv_obj_t *scr);
+
+/**
+ * @brief Check if user pressed skip button on provisioning screen
+ *
+ * @return true if skip was pressed, false otherwise
+ */
+bool display_ui_provisioning_skip_pressed(void);
 
 /**
  * @brief Update sensor data display on the UI

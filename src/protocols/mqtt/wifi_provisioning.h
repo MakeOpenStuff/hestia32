@@ -17,7 +17,7 @@ typedef struct {
     char server_url[MAX_SERVER_URL_LEN];
     char node_name[MAX_NODE_NAME_LEN];
     bool provisioned;
-    
+
     // OTA update settings
     bool ota_auto_update;           // Enable automatic OTA checks
     uint8_t ota_release_channel;    // 0 = stable, 1 = develop (includes pre-releases)
@@ -48,6 +48,17 @@ esp_err_t wifi_prov_start_ap(void);
  * Stop WiFi provisioning AP mode
  */
 void wifi_prov_stop_ap(void);
+
+/**
+ * Mark that user explicitly skipped WiFi provisioning
+ */
+void wifi_prov_mark_skipped(void);
+
+/**
+ * Check if user explicitly skipped WiFi provisioning
+ * @return true if skipped, false otherwise
+ */
+bool wifi_prov_is_skipped(void);
 
 /**
  * Get stored WiFi configuration

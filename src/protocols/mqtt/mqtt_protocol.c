@@ -1,4 +1,5 @@
 #include "protocols/mqtt/mqtt_protocol.h"
+#include "protocols/mqtt/mqtt_config.h"
 #include "protocols/mqtt/wifi_provisioning.h"
 #include "protocols/mqtt/wifi_manager.h"
 #include "protocols/mqtt/ota_manager.h"
@@ -84,17 +85,17 @@ static esp_err_t mqtt_start(void) {
     }
 
     // Connect with credentials from NVS
-    err = wifi_connect(ssid, password, 10);
+    err = wifi_connect(ssid, password, WIFI_MAX_RETRY);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "WiFi connect failed: %s", esp_err_to_name(err));
-        return err;
+        ESP_LOGW(TAG, "WiFi connect failed: %s (continuing anyway)", esp_err_to_name(err));
+        // Don't return error - allow device to continue operating without WiFi
+        // This prevents blocking sensor readings and other functionality
+    } else {
+        ESP_LOGI(TAG, "WiFi connected successfully");
     }
 
-    // Wait for WiFi connection
-    ESP_LOGI(TAG, "Waiting for WiFi connection...");
-    while (!wifi_is_connected()) {
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
+    // Remove blocking wait - WiFi will connect in background
+    // Sensors and other functionality can operate independently
 
     ESP_LOGI(TAG, "WiFi connected");
 

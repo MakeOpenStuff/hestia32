@@ -11,7 +11,6 @@
 #include "core/core_config.h"
 #include "core/display_config.h"
 #include "protocols/mqtt/mqtt_config.h"
-#include "protocols/mqtt/wifi_provisioning.h"
 #include "core/protocol_manager.h"
 #include "core/display_manager.h"
 #include "core/display_ui.h"
@@ -19,7 +18,6 @@
 #include "core/sensor_sht45.h"
 #include "core/user_settings.h"
 #include "core/core_config.h"
-#include "ui/ui_onboarding.h"
 #include "lvgl.h"
 
 static const char *TAG = "main";
@@ -168,132 +166,101 @@ void app_main(void) {
 
 		ESP_LOGI(TAG, "Factory reset: hold BOOT for 5 seconds while running");
 
-// PRIORITY 1: Check if calibration exists - run wizard if needed BEFORE anything else
+		// PRIORITY 1: Check if calibration exists - run wizard if needed BEFORE WiFi provisioning
 #if DISPLAY_ENABLED
-bool has_calibration = display_has_calibration();
+		bool has_calibration = display_has_calibration();
 
-if (!has_calibration) {
-ESP_LOGI(TAG, "No calibration found - running wizard first");
-ret = display_init();
-if (ret == ESP_OK) {
-display_create_ui(false, false);  // Run calibration wizard
-ESP_LOGI(TAG, "Calibration complete - clearing display");
-display_clear_screen();
-display_update();
-}
-ESP_LOGI(TAG, "Restarting to continue boot sequence...");
-vTaskDelay(pdMS_TO_TICKS(1000));
-esp_restart();
-}
+		if (!has_calibration) {
+				ESP_LOGI(TAG, "No calibration found - running wizard first");
+				ret = display_init();
+				if (ret == ESP_OK) {
+						display_create_ui(false, false);  // Run calibration wizard, full UI
+						ESP_LOGI(TAG, "Calibration complete - clearing display");
+
+						// Clear display before restart
+						display_clear_screen();
+						display_update();
+				}
+				// Restart to apply calibration and continue with WiFi provisioning
+				ESP_LOGI(TAG, "Restarting to continue with WiFi provisioning...");
+				vTaskDelay(pdMS_TO_TICKS(1000));
+				esp_restart();
+		}
 #else
-ESP_LOGI(TAG, "Display disabled for this board configuration");
+		ESP_LOGI(TAG, "Display disabled for this board configuration");
 #endif
 
-// Initialize relay control
-ret = relay_manager_init();
-if (ret != ESP_OK) {
-ESP_LOGW(TAG, "Relay manager initialization failed (continuing anyway)");
-} else {
-ESP_LOGI(TAG, "Relay manager initialized");
-}
-
-/* Step 2: Check WiFi provisioning BEFORE initializing main UI */
-ret = protocol_manager_init();
-if (ret != ESP_OK) {
-ESP_LOGE(TAG, "Protocol manager initialization failed");
-return;
-}
-
-bool is_provisioned = protocol_manager_is_provisioned();
-
-#if DISPLAY_ENABLED
-/* Step 3: Initialize display */
-ESP_LOGI(TAG, "Initializing display...");
-ret = display_init();
-if (ret != ESP_OK) {
-ESP_LOGE(TAG, "Display initialization failed");
-} else {
-/* Check if onboarding is needed BEFORE creating main UI */
-bool needs_onboarding = ui_onboarding_needed();
-
-if (needs_onboarding) {
-/* Create temporary simple UI for onboarding */
-display_create_ui(false, false);  // Basic UI for onboarding screen
-display_start_lvgl_task();
-ESP_LOGI(TAG, "Onboarding needed, showing onboarding screen...");
-ui_onboarding_show();  // Blocks until user presses Continue
-ESP_LOGI(TAG, "Onboarding complete");
-display_clear_screen();  // Clear onboarding UI
-}
-
-/* Check WiFi provisioning status */
-if (!is_provisioned) {
-/* Show provisioning UI with skip option */
-ESP_LOGI(TAG, "Device not provisioned. Starting provisioning AP...");
-ESP_LOGI(TAG, "Connect to WiFi: %s", PROV_AP_SSID);
-ESP_LOGI(TAG, "Password: %s", PROV_AP_PASSWORD);
-ESP_LOGI(TAG, "Then open http://192.168.4.1 in your browser");
-
-ret = protocol_manager_start_provisioning();
-if (ret != ESP_OK) {
-ESP_LOGE(TAG, "Failed to start provisioning");
-return;
-}
-ESP_LOGI(TAG, "Provisioning started");
-
-// Wait for DHCP to initialize
-vTaskDelay(pdMS_TO_TICKS(2000));
-
-/* Create provisioning UI */
-display_create_ui(true, true);  // Show provisioning UI
-if (!needs_onboarding) {
-display_start_lvgl_task();  // Start LVGL if not already started
-}
-
-/* Wait for either provisioning completion or skip button */
-while (1) {
-if (display_ui_provisioning_skip_pressed()) {
-ESP_LOGI(TAG, "User skipped WiFi provisioning - continuing without WiFi");
-				/* Stop provisioning AP and mark as skipped */
-				wifi_prov_mark_skipped();
-				wifi_prov_stop_ap();
-				break;
-			}
-			display_update();
-			vTaskDelay(pdMS_TO_TICKS(100));
+		// Initialize relay control
+		ret = relay_manager_init();
+		if (ret != ESP_OK) {
+				ESP_LOGW(TAG, "Relay manager initialization failed (continuing anyway)");
+		} else {
+				ESP_LOGI(TAG, "Relay manager initialized - test cycle disabled for display testing");
+				// Test relay control - comment out when not needed
+				// test_relay_cycle();
 		}
 
-		/* Clear provisioning UI before creating main UI */
-display_clear_screen();
-}
+		// Initialize protocol manager
+		ret = protocol_manager_init();
+		if (ret != ESP_OK) {
+				ESP_LOGE(TAG, "Protocol manager initialization failed");
+				return;
+		}
 
-/* NOW create the main UI with timers (after onboarding and provisioning) */
-display_create_ui(false, false);  // Load calibration from NVS, show full UI
-if (!needs_onboarding && is_provisioned) {
-display_start_lvgl_task();  // Start LVGL if not already started
-}
-ESP_LOGI(TAG, "Display initialized successfully");
-}
+		bool is_provisioned = protocol_manager_is_provisioned();
+
+		if (!is_provisioned) {
+				// Start WiFi AP FIRST
+				ESP_LOGI(TAG, "Device not provisioned. Starting provisioning AP...");
+				ESP_LOGI(TAG, "Connect to WiFi: %s", PROV_AP_SSID);
+				ESP_LOGI(TAG, "Password: %s", PROV_AP_PASSWORD);
+				ESP_LOGI(TAG, "Then open http://192.168.4.1 in your browser");
+
+				ret = protocol_manager_start_provisioning();
+				if (ret != ESP_OK) {
+						ESP_LOGE(TAG, "Failed to start provisioning");
+						return;
+				}
+				ESP_LOGI(TAG, "Provisioning started");
+
+				// Wait for DHCP to initialize
+				vTaskDelay(pdMS_TO_TICKS(2000));
+
+				// Initialize display on a low priority task to not interfere with DHCP
+		#if DISPLAY_ENABLED
+				xTaskCreate(display_provisioning_task, "display_prov", 4096, NULL, 2, NULL);
+		#else
+				ESP_LOGI(TAG, "Provisioning mode running headless (display disabled)");
+		#endif
+
+				// Main task just waits (device will restart after provisioning)
+				while (1) {
+						vTaskDelay(pdMS_TO_TICKS(100));
+				}
+		}
+
+		// Device is provisioned and calibrated - initialize display with full UI
+#if DISPLAY_ENABLED
+		ESP_LOGI(TAG, "Initializing display...");
+		ret = display_init();
+		if (ret == ESP_OK) {
+				display_create_ui(false, false);  // Load calibration from NVS, show full UI
+				display_start_lvgl_task();  // Start dedicated LVGL task for UI updates
+				ESP_LOGI(TAG, "Display initialized successfully");
+		
+		/* Check if onboarding is needed (first boot or after factory reset) */
+		#include "ui/ui_onboarding.h"
+		if (ui_onboarding_needed()) {
+			ESP_LOGI(TAG, "Onboarding needed, showing onboarding screen...");
+			ui_onboarding_show();  // Blocks until user presses Continue
+			ESP_LOGI(TAG, "Onboarding complete");
+		}	} else {
+		ESP_LOGE(TAG, "Display initialization failed");
+	}
 #else
-if (!is_provisioned) {
-ESP_LOGI(TAG, "Device not provisioned. Starting provisioning AP...");
-ESP_LOGI(TAG, "Connect to WiFi: %s", PROV_AP_SSID);
-ESP_LOGI(TAG, "Password: %s", PROV_AP_PASSWORD);
-ESP_LOGI(TAG, "Then open http://192.168.4.1 in your browser");
-
-ret = protocol_manager_start_provisioning();
-if (ret != ESP_OK) {
-ESP_LOGE(TAG, "Failed to start provisioning");
-return;
-}
-ESP_LOGI(TAG, "Provisioning started - running headless (display disabled)");
-while (1) {
-vTaskDelay(pdMS_TO_TICKS(100));
-}
-}
+	ESP_LOGI(TAG, "Running headless mode (display disabled)");
 #endif
 
-// Initialize sensors BEFORE starting WiFi to prevent blocking
 	// Initialize relay manager and sensors BEFORE starting WiFi to prevent blocking		ESP_LOGI(TAG, "Initializing relay manager...");
 		ret = relay_manager_init();
 		if (ret == ESP_OK) {

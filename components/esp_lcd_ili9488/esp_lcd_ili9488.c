@@ -11,7 +11,6 @@
 #include "esp_lcd_ili9488.h"
 
 static const char *TAG = "ili9488";
-//TODO: Fix colours
 
 // ILI9488 specific commands
 #define ILI9488_CMD_NOP                  0x00
@@ -148,7 +147,7 @@ static esp_err_t panel_ili9488_init(esp_lcd_panel_t *panel)
 
     // Memory Access Control:
     // MY=0, MX=0, MV=0, ML=0, BGR=0, MH=0
-    // RGB mode
+    // RGB mode (BGR bit disabled) - display panel expects RGB order
     // Mirror will be set via esp_lcd_panel_mirror() call
     esp_lcd_panel_io_tx_param(io, ILI9488_CMD_MADCTL, (uint8_t[]){0x00}, 1);    // Positive Gamma Control
     esp_lcd_panel_io_tx_param(io, 0xE0, (uint8_t[]){
@@ -189,9 +188,9 @@ static esp_err_t panel_ili9488_init(esp_lcd_panel_t *panel)
     esp_lcd_panel_io_handle_t io = ili9488->io;
 
     x_start += ili9488->x_gap;
-    x_end += ili9488->x_gap;
+    x_end   += ili9488->x_gap;
     y_start += ili9488->y_gap;
-    y_end += ili9488->y_gap;
+    y_end   += ili9488->y_gap;
 
     // Column Address Set
     esp_lcd_panel_io_tx_param(io, ILI9488_CMD_CASET, (uint8_t[]) {
@@ -210,7 +209,7 @@ static esp_err_t panel_ili9488_init(esp_lcd_panel_t *panel)
     }, 4);
 
     // Memory Write
-    size_t len = (x_end - x_start) * (y_end - y_start) * ili9488->fb_bits_per_pixel / 8;
+    size_t len = (size_t)(x_end - x_start) * (size_t)(y_end - y_start) * ili9488->fb_bits_per_pixel / 8;
     esp_lcd_panel_io_tx_color(io, ILI9488_CMD_RAMWR, color_data, len);
 
     return ESP_OK;

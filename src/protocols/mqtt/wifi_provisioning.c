@@ -19,6 +19,8 @@ static const char *TAG = "wifi_prov";
 static httpd_handle_t server = NULL;
 static int dns_socket = -1;
 static bool dns_running = false;
+static esp_netif_t *s_ap_netif = NULL;  /* Track AP netif for cleanup */
+static bool s_wifi_skipped = false;  /* Track if user explicitly skipped WiFi */
 
 // Simple DNS server task for captive portal
 static void dns_server_task(void *pvParameters)
@@ -350,10 +352,21 @@ bool wifi_prov_is_provisioned(void)
 
 esp_err_t wifi_prov_start_ap(void)
 {
-		esp_netif_t *ap_netif = esp_netif_create_default_wifi_ap();
+	/* Don't start AP if user explicitly skipped provisioning */
+	if (s_wifi_skipped) {
+		ESP_LOGI(TAG, "WiFi provisioning was skipped by user - not starting AP");
+		return ESP_OK;
+	}
 
-		esp_netif_ip_info_t ip_info;
-		IP4_ADDR(&ip_info.ip, 192, 168, 4, 1);
+	/* Check if AP netif already exists */
+	if (s_ap_netif != NULL) {
+		ESP_LOGW(TAG, "AP netif already exists - not creating again");
+		return ESP_OK;
+	}
+
+	s_ap_netif = esp_netif_create_default_wifi_ap();
+	esp_netif_t *ap_netif = s_ap_netif;
+	esp_netif_ip_info_t ip_info;		IP4_ADDR(&ip_info.ip, 192, 168, 4, 1);
 		IP4_ADDR(&ip_info.gw, 192, 168, 4, 1);
 		IP4_ADDR(&ip_info.netmask, 255, 255, 255, 0);
 		esp_netif_dhcps_stop(ap_netif);
@@ -398,14 +411,35 @@ esp_err_t wifi_prov_start_ap(void)
 
 void wifi_prov_stop_ap(void)
 {
-		if (server) {
-				httpd_stop(server);
-				server = NULL;
-		}
+	ESP_LOGI(TAG, "Stopping provisioning AP...");
 
-		dns_running = false;
+	if (server) {
+		httpd_stop(server);
+		server = NULL;
+	}
 
-		esp_wifi_stop();
+	dns_running = false;
+
+	esp_wifi_stop();
+	esp_wifi_deinit();
+
+	/* Destroy AP netif if it exists */
+	if (s_ap_netif != NULL) {
+		esp_netif_destroy(s_ap_netif);
+		s_ap_netif = NULL;
+		ESP_LOGI(TAG, "AP netif destroyed");
+	}
+}
+
+void wifi_prov_mark_skipped(void)
+{
+	s_wifi_skipped = true;
+	ESP_LOGI(TAG, "WiFi provisioning marked as skipped");
+}
+
+bool wifi_prov_is_skipped(void)
+{
+	return s_wifi_skipped;
 }
 
 esp_err_t wifi_prov_reset(void)

@@ -47,6 +47,18 @@ void display_update(void);
 void display_start_lvgl_task(void);
 
 /**
+ * @brief Set touch pointer visibility
+ * @param visible true to show pointer, false to hide
+ */
+void display_set_touch_pointer_visible(bool visible);
+
+/**
+ * @brief Run touch calibration wizard
+ * Clears the screen and runs the 5-point calibration sequence
+ */
+void display_recalibrate(void);
+
+/**
  * @brief Suspend display task to free memory during OTA
  * Suspends LVGL rendering task to free up ~100KB for OTA operations
  */
@@ -81,6 +93,18 @@ void display_ota_restore_no_update(void);
  * Called by ota_init() on first boot after successful OTA update
  */
 void display_ota_led_off(void);
+
+/**
+ * @brief Reset the backlight sleep timer (call from any user interaction).
+ *        Wakes the display immediately if it was sleeping.
+ */
+void display_notify_activity(void);
+
+/**
+ * @brief Reload display settings from NVS
+ * Called after settings are changed to apply them immediately without reboot
+ */
+void display_reload_settings(void);
 
 #ifdef __cplusplus
 }

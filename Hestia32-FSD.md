@@ -350,7 +350,7 @@ For NodeMCU-32S boards using PlatformIO, pin assignments differ. Refer to `displ
 **Description:** Device shall provide multi-stage heating/cooling control with advanced features.
 
 **Acceptance Criteria:**
-1. Support up to 4 simultaneous domains (heating, cooling, fan, humidity, hot water)
+1. Support up to 5 simultaneous domains (heating, cooling, fan, humidity, hot water)
 2. Multi-stage heating/cooling with configurable delays
 3. Comfort/Eco modes with different deadbands
 4. Open window detection (rapid temperature drop suspends heating)

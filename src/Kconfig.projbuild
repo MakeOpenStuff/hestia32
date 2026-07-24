@@ -79,4 +79,33 @@ menu "Hestia32 Configuration"
         bool
         default y if HESTIA32_PROTOCOL_MATTER
 
+    choice HESTIA32_DEVICE_MODEL
+        prompt "Default Device Model"
+        default HESTIA32_MODEL_HVAC
+        help
+            Sets the compile-time default for device model on first boot.
+            The user can change this later in Settings → Model.
+            This value is never erased by factory reset.
+
+        config HESTIA32_MODEL_HVAC
+            bool "HVAC (North American: R + Y1/Y2/W1/W2/G)"
+            help
+                Default for North American HVAC systems.
+                Common wire = R (24VAC), output terminals = Y1, Y2, W1, W2, G.
+
+        config HESTIA32_MODEL_EU
+            bool "EU (European mains: N + L1-L5)"
+            help
+                Default for European mains-wiring systems.
+                Common wire = N (neutral), output terminals = L1, L2, L3, L4, L5.
+    endchoice
+
+    config DEFAULT_DEVICE_MODEL_HVAC
+        bool
+        default y if HESTIA32_MODEL_HVAC
+
+    config DEFAULT_DEVICE_MODEL_EU
+        bool
+        default y if HESTIA32_MODEL_EU
+
 endmenu

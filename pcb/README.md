@@ -15,8 +15,8 @@ Resulting variants:
 |---------|--------|-----|-----------------|
 | DevKit-EU | DevKit-EU/ | - | - |
 | DevKit-HVAC | DevKit-HVAC/ | - | - |
-| XIAO-EU | [XIAO-EU/](XIAO-EU/) | [BOM](XIAO-EU/README.md) | [iBOM](https://htmlpreview.github.io/?https://github.com/MakeOpenStuff/hestia32/blob/main/pcb/XIAO-EU/iBOM_Hestia32-EU_XIAO.html) |
-| XIAO-HVAC | [XIAO-HVAC/](XIAO-HVAC/) | [BOM](XIAO-HVAC/README.md) | [iBOM](https://htmlpreview.github.io/?https://github.com/MakeOpenStuff/hestia32/blob/main/pcb/XIAO-HVAC/iBOM_Hestia32-HVAC_XIAO.html) |
+| XIAO-EU | [XIAO-EU/](XIAO-EU/) | [BOM](https://github.com/MakeOpenStuff/hestia32/blob/develop/pcb/XIAO-EU/BOM_Hestia32-EU_XIAO.csv) | [iBOM](https://htmlpreview.github.io/?https://github.com/MakeOpenStuff/hestia32/blob/develop/pcb/XIAO-EU/iBOM_Hestia32-EU_XIAO.html) |
+| XIAO-HVAC | [XIAO-HVAC/](XIAO-HVAC/) | [BOM](https://github.com/MakeOpenStuff/hestia32/blob/develop/pcb/XIAO-HVAC/BOM_Hestia32-HVAC_XIAO.csv) | [iBOM](https://htmlpreview.github.io/?https://github.com/MakeOpenStuff/hestia32/blob/develop/pcb/XIAO-HVAC/iBOM_Hestia32-HVAC_XIAO.html) |
 
 ## History
 

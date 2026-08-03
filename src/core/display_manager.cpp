@@ -112,8 +112,19 @@ void display_notify_activity(void)
     s_last_touch_ms = lv_tick_get();
     if (s_display_sleeping) {
         s_display_sleeping = false;
-        s_wake_time_ms = lv_tick_get();  /* Record wake time for debounce */
+        s_wake_time_ms = lv_tick_get();
+        
+        /* Wake display controller first */
+        if (panel_handle) {
+            esp_lcd_panel_disp_on_off(panel_handle, true);
+        }
+        
+        /* Restore backlight */
         backlight_set_pct(s_active_bri);
+        
+        /* Force full screen refresh to clear any retention */
+        lv_obj_invalidate(lv_scr_act());
+        lv_refr_now(lv_disp_get_default());
     }
 }
 
@@ -1123,12 +1134,19 @@ static void lvgl_task(void *arg)
 				// Call LVGL timer handler
 				lv_timer_handler();
 
-				/* ── Backlight sleep check (every tick, cheap) ──────── */
+				/* ── Display sleep check ──────── */
 				if (!s_display_sleeping && s_sleep_timeout_ms > 0) {
 						uint32_t idle = lv_tick_get() - s_last_touch_ms;
 						if (idle >= s_sleep_timeout_ms) {
 								s_display_sleeping = true;
+								
+								/* Dim backlight first */
 								backlight_set_pct(s_sleep_bri);
+								
+								/* Turn off LCD controller to prevent image retention */
+								if (panel_handle) {
+										esp_lcd_panel_disp_on_off(panel_handle, false);
+								}
 						}
 				}
 

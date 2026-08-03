@@ -480,16 +480,19 @@ static void create_heating_panel(lv_obj_t *parent)
     const hestia_theme_t *t = ui_theme_get();
     lv_obj_t *p = lv_obj_create(parent);
     lv_obj_set_size(p, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_opa(p, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_color(p, lv_color_hex(t->bg), 0);
+    lv_obj_set_style_bg_opa(p, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(p, 0, 0);
     lv_obj_set_style_pad_all(p, UI_PAD, 0);
     lv_obj_clear_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(p, LV_OBJ_FLAG_HIDDEN);  /* hidden until select_domain shows it */
     s_ctrl_panels[UI_DOMAIN_HEATING] = p;
 
     /* Setpoint row */
     lv_obj_t *row = lv_obj_create(p);
     lv_obj_set_size(row, LV_PCT(100), 52);
-    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_color(row, lv_color_hex(t->bg), 0);
+    lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(row, 0, 0);
     lv_obj_set_style_pad_all(row, 0, 0);
     lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
@@ -505,6 +508,9 @@ static void create_heating_panel(lv_obj_t *parent)
     float display_temp = is_celsius ? s_heat_sp : temp_c_to_f(s_heat_sp);
     char buf[16]; snprintf(buf, sizeof(buf), "%.1f", display_temp);
     lv_label_set_text(s_heat_sp_label, buf);
+    lv_obj_set_style_bg_color(s_heat_sp_label, lv_color_hex(t->bg), 0);
+    lv_obj_set_style_bg_opa(s_heat_sp_label, LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_all(s_heat_sp_label, 4, 0);
     lv_obj_set_style_text_color(s_heat_sp_label, lv_color_hex(t->heating_color), 0);
     lv_obj_set_style_text_font(s_heat_sp_label, &lv_font_montserrat_28, 0);
     lv_obj_align(s_heat_sp_label, LV_ALIGN_CENTER, 0, 0);
@@ -564,7 +570,8 @@ static void create_cooling_panel(lv_obj_t *parent)
     const hestia_theme_t *t = ui_theme_get();
     lv_obj_t *p = lv_obj_create(parent);
     lv_obj_set_size(p, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_opa(p, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_color(p, lv_color_hex(t->bg), 0);
+    lv_obj_set_style_bg_opa(p, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(p, 0, 0);
     lv_obj_set_style_pad_all(p, UI_PAD, 0);
     lv_obj_clear_flag(p, LV_OBJ_FLAG_SCROLLABLE);
@@ -573,7 +580,8 @@ static void create_cooling_panel(lv_obj_t *parent)
     /* Setpoint row */
     lv_obj_t *row = lv_obj_create(p);
     lv_obj_set_size(row, LV_PCT(100), 52);
-    lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_color(row, lv_color_hex(t->bg), 0);
+    lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(row, 0, 0);
     lv_obj_set_style_pad_all(row, 0, 0);
     lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
@@ -589,6 +597,9 @@ static void create_cooling_panel(lv_obj_t *parent)
     float display_temp_c = is_celsius_c ? s_cool_sp : temp_c_to_f(s_cool_sp);
     char buf[16]; snprintf(buf, sizeof(buf), "%.1f", display_temp_c);
     lv_label_set_text(s_cool_sp_label, buf);
+    lv_obj_set_style_bg_color(s_cool_sp_label, lv_color_hex(t->bg), 0);
+    lv_obj_set_style_bg_opa(s_cool_sp_label, LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_all(s_cool_sp_label, 4, 0);
     lv_obj_set_style_text_color(s_cool_sp_label, lv_color_hex(t->cooling_color), 0);
     lv_obj_set_style_text_font(s_cool_sp_label, &lv_font_montserrat_28, 0);
     lv_obj_align(s_cool_sp_label, LV_ALIGN_CENTER, 0, 0);
@@ -648,7 +659,8 @@ static void create_fan_panel(lv_obj_t *parent)
     const hestia_theme_t *t = ui_theme_get();
     lv_obj_t *p = lv_obj_create(parent);
     lv_obj_set_size(p, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_opa(p, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_color(p, lv_color_hex(t->bg), 0);
+    lv_obj_set_style_bg_opa(p, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(p, 0, 0);
     lv_obj_set_style_pad_all(p, UI_PAD, 0);
     lv_obj_clear_flag(p, LV_OBJ_FLAG_SCROLLABLE);
@@ -692,7 +704,8 @@ static void create_humidity_panel(lv_obj_t *parent)
     const hestia_theme_t *t = ui_theme_get();
     lv_obj_t *p = lv_obj_create(parent);
     lv_obj_set_size(p, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_opa(p, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_color(p, lv_color_hex(t->bg), 0);
+    lv_obj_set_style_bg_opa(p, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(p, 0, 0);
     lv_obj_set_style_pad_all(p, UI_PAD, 0);
     lv_obj_clear_flag(p, LV_OBJ_FLAG_SCROLLABLE);
@@ -731,7 +744,8 @@ static void create_humidity_panel(lv_obj_t *parent)
     /* Setpoint controls */
     lv_obj_t *sp_row = lv_obj_create(p);
     lv_obj_set_size(sp_row, LV_PCT(100), 52);
-    lv_obj_set_style_bg_opa(sp_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_color(sp_row, lv_color_hex(t->bg), 0);
+    lv_obj_set_style_bg_opa(sp_row, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(sp_row, 0, 0);
     lv_obj_set_style_pad_all(sp_row, 0, 0);
     lv_obj_clear_flag(sp_row, LV_OBJ_FLAG_SCROLLABLE);
@@ -802,7 +816,8 @@ static void create_hotwater_panel(lv_obj_t *parent)
     const hestia_theme_t *t = ui_theme_get();
     lv_obj_t *p = lv_obj_create(parent);
     lv_obj_set_size(p, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_bg_opa(p, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_color(p, lv_color_hex(t->bg), 0);
+    lv_obj_set_style_bg_opa(p, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(p, 0, 0);
     lv_obj_set_style_pad_all(p, UI_PAD, 0);
     lv_obj_clear_flag(p, LV_OBJ_FLAG_SCROLLABLE);
@@ -888,7 +903,8 @@ static void create_controls_pane(lv_obj_t *parent)
     /* Content area (below header) */
     lv_obj_t *content = lv_obj_create(pane);
     lv_obj_set_size(content, LV_PCT(100), UI_SCREEN_H - 36);
-    lv_obj_set_style_bg_opa(content, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_color(content, lv_color_hex(t->bg), 0);
+    lv_obj_set_style_bg_opa(content, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(content, 0, 0);
     lv_obj_set_style_pad_all(content, 0, 0);
     lv_obj_clear_flag(content, LV_OBJ_FLAG_SCROLLABLE);
@@ -940,12 +956,15 @@ static void select_domain(ui_domain_t domain)
 
     /* Swap content panels - domain is sidebar index, need to get domain bit */
     int selected_domain_bit = (domain < s_sidebar_domain_count) ? s_idx_to_domain[domain] : 0;
+
+    /* Hide all panels, show selected */
     for (int i = 0; i < 7; i++) {
-        if (!s_ctrl_panels[i]) continue;
-        if (i == selected_domain_bit) {
-            lv_obj_clear_flag(s_ctrl_panels[i], LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(s_ctrl_panels[i], LV_OBJ_FLAG_HIDDEN);
+        if (s_ctrl_panels[i]) {
+            if (i == selected_domain_bit) {
+                lv_obj_clear_flag(s_ctrl_panels[i], LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_add_flag(s_ctrl_panels[i], LV_OBJ_FLAG_HIDDEN);
+            }
         }
     }
 

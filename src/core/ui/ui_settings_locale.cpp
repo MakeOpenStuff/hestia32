@@ -52,7 +52,12 @@ void ui_settings_locale_open(void)
     const hestia_theme_t *t = ui_theme_get();
 
     lv_obj_t *scr = lv_obj_create(NULL);
+    lv_obj_set_size(scr, UI_SCREEN_W, UI_SCREEN_H);
     lv_obj_set_style_bg_color(scr, lv_color_hex(t->bg), 0);
+    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(scr, 0, 0);
+    lv_obj_set_style_radius(scr, 0, 0);
+    lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Header with title and back button */
     ui_common_header(scr, "Locale", on_back, NULL);

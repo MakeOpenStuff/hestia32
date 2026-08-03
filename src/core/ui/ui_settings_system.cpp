@@ -332,18 +332,25 @@ void ui_settings_system_open(void)
     s_current_page = 0;
 
     lv_obj_t *scr = lv_obj_create(NULL);
+    lv_obj_set_size(scr, UI_SCREEN_W, UI_SCREEN_H);
     lv_obj_set_style_bg_color(scr, lv_color_hex(t->bg), 0);
+    lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(scr, 0, 0);
+    lv_obj_set_style_radius(scr, 0, 0);
+    lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Header with title, back button, and navigation arrows */
     lv_obj_t *header = lv_obj_create(scr);
     lv_obj_set_size(header, UI_SCREEN_W, UI_HEADER_H);
     lv_obj_align(header, LV_ALIGN_TOP_LEFT, 0, 0);
     lv_obj_set_style_bg_color(header, lv_color_hex(t->surface), 0);
+    lv_obj_set_style_bg_opa(header, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(header, 0, 0);
     lv_obj_set_style_border_side(header, LV_BORDER_SIDE_BOTTOM, LV_PART_MAIN);
     lv_obj_set_style_border_color(header, lv_color_hex(t->border), LV_PART_MAIN);
     lv_obj_set_style_border_width(header, 1, LV_PART_MAIN);
     lv_obj_set_style_radius(header, 0, 0);
+    lv_obj_set_style_pad_all(header, 0, 0);
     lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Back button */

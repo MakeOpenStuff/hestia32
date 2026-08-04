@@ -25,6 +25,13 @@ void ui_onboarding_mark_complete(void);
  */
 void ui_onboarding_show(void);
 
+/**
+ * @brief Show the time/timezone onboarding screen
+ * Blocks until user presses Continue button.
+ * Must be called from LVGL task context.
+ */
+void ui_onboarding_time_show(void);
+
 #ifdef __cplusplus
 }
 #endif

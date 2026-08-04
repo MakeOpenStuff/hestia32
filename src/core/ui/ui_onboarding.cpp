@@ -9,6 +9,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include <string.h>
+#include <stdlib.h>
+#include <time.h>
 
 static const char *TAG = "ui_onboarding";
 #define NVS_NAMESPACE "onboarding"
@@ -117,8 +120,7 @@ static void update_temp_buttons(void)
 
 static void on_model_hvac(lv_event_t *e)
 {
-    (void)e;
-    s_selected_model = DEVICE_MODEL_HVAC;
+    (void)e;    ESP_LOGI(TAG, "[DEBUG] HVAC button clicked!");    s_selected_model = DEVICE_MODEL_HVAC;
     s_selected_unit = TEMP_UNIT_FAHRENHEIT;  // Default for HVAC
     update_model_buttons();
     update_temp_buttons();
@@ -217,6 +219,10 @@ void ui_onboarding_show(void)
     lv_obj_t *scr = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(scr, lv_color_hex(t->bg), 0);
     lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* Explicitly ensure screen can receive input events (debug for touch issue) */
+    lv_obj_add_flag(scr, LV_OBJ_FLAG_CLICKABLE);
+    ESP_LOGI(TAG, "Onboarding model screen created, flags: clickable=1, scrollable=0");
 
     /* Title */
     lv_obj_t *title = lv_label_create(scr);
@@ -319,6 +325,8 @@ void ui_onboarding_show(void)
 
     /* Load screen */
     lv_scr_load(scr);
+    ESP_LOGI(TAG, "[DEBUG] Onboarding screen loaded, active screen = %p, created screen = %p",
+             (void*)lv_scr_act(), (void*)scr);
 
     /* Block until Continue is pressed */
     ESP_LOGI(TAG, "Waiting for user to press Continue...");
@@ -328,8 +336,220 @@ void ui_onboarding_show(void)
     vSemaphoreDelete(s_continue_sem);
     s_continue_sem = NULL;
 
-    /* Delete onboarding screen */
-    lv_obj_del(scr);
+    /* Note: Don't delete screen here - let next screen replace it via lv_scr_load() */
 
     ESP_LOGI(TAG, "Onboarding complete, continuing boot...");
 }
+
+/* ========================================================================== */
+/*                    TIME/TIMEZONE ONBOARDING SCREEN                         */
+/* ========================================================================== */
+
+static const struct { const char *label; const char *posix; } TZ_LIST_OB[] = {
+    { "UTC",               "UTC0"                              },  // 0
+    { "London (GMT/BST)",  "GMT0BST,M3.5.0/1,M10.5.0"         },  // 1  (EU default)
+    { "Paris/Berlin (CET)","CET-1CEST,M3.5.0,M10.5.0/3"       },  // 2
+    { "Athens (EET)",      "EET-2EEST,M3.5.0/3,M10.5.0/4"     },  // 3
+    { "Moscow (MSK)",      "MSK-3"                             },  // 4
+    { "Dubai (GST)",       "GST-4"                             },  // 5
+    { "India (IST)",       "IST-5:30"                          },  // 6
+    { "Bangkok (ICT)",     "ICT-7"                             },  // 7
+    { "Singapore (SGT)",   "SGT-8"                             },  // 8
+    { "Tokyo (JST)",       "JST-9"                             },  // 9
+    { "Sydney (AEST)",     "AEST-10AEDT,M10.1.0,M4.1.0/3"     },  // 10
+    { "Auckland (NZST)",   "NZST-12NZDT,M9.5.0,M4.1.0/3"      },  // 11
+    { "US Eastern (ET)",   "EST5EDT,M3.2.0,M11.1.0"           },  // 12 (HVAC default)
+    { "US Central (CT)",   "CST6CDT,M3.2.0,M11.1.0"           },  // 13
+    { "US Mountain (MT)",  "MST7MDT,M3.2.0,M11.1.0"           },  // 14
+    { "US Pacific (PT)",   "PST8PDT,M3.2.0,M11.1.0"           },  // 15
+    { "US Alaska (AKT)",   "AKST9AKDT,M3.2.0,M11.1.0"         },  // 16
+    { "US Hawaii (HST)",   "HST10"                             },  // 17
+    { "Sao Paulo (BRT)",   "BRT3BRST,M10.3.0/0,M2.3.0/0"      },  // 18
+};
+#define TZ_COUNT_OB ((int)(sizeof(TZ_LIST_OB)/sizeof(TZ_LIST_OB[0])))
+#define TZ_IDX_HVAC_DEFAULT 12
+#define TZ_IDX_EU_DEFAULT   1
+
+static time_settings_t   s_ts_ob;
+static lv_obj_t         *s_ntp_sw_ob = NULL;
+static lv_obj_t         *s_tz_dd_ob  = NULL;
+static SemaphoreHandle_t s_time_sem  = NULL;
+
+static void on_time_continue(lv_event_t *e)
+{
+    (void)e;
+
+    /* Read NTP switch state */
+    s_ts_ob.use_ntp = lv_obj_has_state(s_ntp_sw_ob, LV_STATE_CHECKED) ? 1 : 0;
+
+    /* Read timezone dropdown selection */
+    uint16_t sel = lv_dropdown_get_selected(s_tz_dd_ob);
+    if (sel < TZ_COUNT_OB) {
+        strncpy(s_ts_ob.tz_posix, TZ_LIST_OB[sel].posix, sizeof(s_ts_ob.tz_posix) - 1);
+        s_ts_ob.tz_posix[sizeof(s_ts_ob.tz_posix) - 1] = '\0';
+
+        /* Apply timezone immediately */
+        setenv("TZ", s_ts_ob.tz_posix, 1);
+        tzset();
+    }
+
+    /* Save time settings */
+    time_settings_save(&s_ts_ob);
+
+    ESP_LOGI(TAG, "Time settings saved: NTP=%d, TZ=%s",
+             s_ts_ob.use_ntp, s_ts_ob.tz_posix);
+
+    /* Signal completion */
+    if (s_time_sem) {
+        xSemaphoreGive(s_time_sem);
+    }
+}
+
+void ui_onboarding_time_show(void)
+{
+    const hestia_theme_t *t = ui_theme_get();
+
+    /* Load current time settings */
+    time_settings_init();
+    time_settings_get(&s_ts_ob);
+
+    /* Determine timezone preselection based on device model */
+    device_config_t cfg;
+    device_config_get(&cfg);
+    bool is_hvac = (cfg.model == DEVICE_MODEL_HVAC);
+    int default_tz_idx = is_hvac ? TZ_IDX_HVAC_DEFAULT : TZ_IDX_EU_DEFAULT;
+
+    /* Find matching timezone entry, fallback to model default if UTC0 (never set) */
+    int presel = default_tz_idx;
+    if (strcmp(s_ts_ob.tz_posix, "UTC0") != 0) {
+        for (int i = 0; i < TZ_COUNT_OB; i++) {
+            if (strcmp(TZ_LIST_OB[i].posix, s_ts_ob.tz_posix) == 0) {
+                presel = i;
+                break;
+            }
+        }
+    }
+
+    ESP_LOGI(TAG, "Showing time onboarding with presel: model=%s, tz_idx=%d",
+             is_hvac ? "HVAC" : "EU", presel);
+
+    /* Create semaphore for blocking */
+    s_time_sem = xSemaphoreCreateBinary();
+
+    /* Create full-screen onboarding UI */
+    lv_obj_t *scr = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(scr, lv_color_hex(t->bg), 0);
+    lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* Title */
+    lv_obj_t *title = lv_label_create(scr);
+    lv_label_set_text(title, "Internet Time");
+    lv_obj_set_style_text_color(title, lv_color_hex(t->text), 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_28, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 20);
+
+    /* Subtitle */
+    lv_obj_t *subtitle = lv_label_create(scr);
+    lv_label_set_text(subtitle, "Choose how your device syncs the clock");
+    lv_obj_set_style_text_color(subtitle, lv_color_hex(t->text_secondary), 0);
+    lv_obj_set_style_text_font(subtitle, &lv_font_montserrat_14, 0);
+    lv_obj_align(subtitle, LV_ALIGN_TOP_MID, 0, 60);
+
+    /* NTP row container */
+    lv_obj_t *ntp_cont = lv_obj_create(scr);
+    lv_obj_set_size(ntp_cont, 440, 50);
+    lv_obj_align(ntp_cont, LV_ALIGN_TOP_MID, 0, 90);
+    lv_obj_set_style_bg_color(ntp_cont, lv_color_hex(t->surface), 0);
+    lv_obj_set_style_bg_opa(ntp_cont, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(ntp_cont, 0, 0);
+    lv_obj_set_style_radius(ntp_cont, 8, 0);
+    lv_obj_clear_flag(ntp_cont, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* NTP label */
+    lv_obj_t *ntp_label = lv_label_create(ntp_cont);
+    lv_label_set_text(ntp_label, "Internet Time");
+    lv_obj_set_style_text_color(ntp_label, lv_color_hex(t->text), 0);
+    lv_obj_set_style_text_font(ntp_label, &lv_font_montserrat_16, 0);
+    lv_obj_align(ntp_label, LV_ALIGN_LEFT_MID, 16, 0);
+
+    /* NTP switch */
+    s_ntp_sw_ob = lv_switch_create(ntp_cont);
+    lv_obj_align(s_ntp_sw_ob, LV_ALIGN_RIGHT_MID, -16, 0);
+    lv_obj_set_style_bg_color(s_ntp_sw_ob, lv_color_hex(t->inactive_color), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_ntp_sw_ob, lv_color_hex(t->primary), LV_PART_INDICATOR | LV_STATE_CHECKED);
+    if (s_ts_ob.use_ntp) {
+        lv_obj_add_state(s_ntp_sw_ob, LV_STATE_CHECKED);
+    }
+
+    /* Timezone label */
+    lv_obj_t *tz_label = lv_label_create(scr);
+    lv_label_set_text(tz_label, "Timezone");
+    lv_obj_set_style_text_color(tz_label, lv_color_hex(t->text_secondary), 0);
+    lv_obj_set_style_text_font(tz_label, &lv_font_montserrat_14, 0);
+    lv_obj_align(tz_label, LV_ALIGN_TOP_LEFT, 20, 152);
+
+    /* Build timezone options string */
+    static char tz_opts[512];
+    tz_opts[0] = '\0';
+    for (int i = 0; i < TZ_COUNT_OB; i++) {
+        strncat(tz_opts, TZ_LIST_OB[i].label, sizeof(tz_opts) - strlen(tz_opts) - 2);
+        if (i < TZ_COUNT_OB - 1) {
+            strncat(tz_opts, "\n", sizeof(tz_opts) - strlen(tz_opts) - 1);
+        }
+    }
+
+    /* Timezone dropdown */
+    s_tz_dd_ob = lv_dropdown_create(scr);
+    lv_obj_set_size(s_tz_dd_ob, 440, 44);
+    lv_obj_align(s_tz_dd_ob, LV_ALIGN_TOP_MID, 0, 172);
+    lv_dropdown_set_options(s_tz_dd_ob, tz_opts);
+    lv_dropdown_set_selected(s_tz_dd_ob, (uint16_t)presel);
+
+    /* Style dropdown */
+    lv_obj_set_style_bg_color(s_tz_dd_ob, lv_color_hex(t->surface), 0);
+    lv_obj_set_style_bg_opa(s_tz_dd_ob, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(s_tz_dd_ob, lv_color_hex(t->border), 0);
+    lv_obj_set_style_border_width(s_tz_dd_ob, 1, 0);
+    lv_obj_set_style_text_color(s_tz_dd_ob, lv_color_hex(t->text), 0);
+    lv_obj_set_style_text_font(s_tz_dd_ob, &lv_font_montserrat_14, 0);
+
+    /* Style dropdown list */
+    lv_obj_t *list = lv_dropdown_get_list(s_tz_dd_ob);
+    if (list) {
+        lv_obj_set_style_max_height(list, 120, 0);
+        lv_obj_set_style_bg_color(list, lv_color_hex(t->surface), 0);
+        lv_obj_set_style_text_color(list, lv_color_hex(t->text), 0);
+        lv_obj_set_style_text_color(list, lv_color_hex(t->primary), LV_PART_SELECTED);
+    }
+
+    /* Continue button */
+    lv_obj_t *continue_btn = lv_btn_create(scr);
+    lv_obj_set_size(continue_btn, 200, 50);
+    lv_obj_set_style_bg_color(continue_btn, lv_color_hex(t->primary), 0);
+    lv_obj_set_style_radius(continue_btn, 8, 0);
+    lv_obj_set_style_shadow_width(continue_btn, 0, 0);
+    lv_obj_align(continue_btn, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_add_event_cb(continue_btn, on_time_continue, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *continue_label = lv_label_create(continue_btn);
+    lv_label_set_text(continue_label, "Continue");
+    lv_obj_set_style_text_color(continue_label, lv_color_hex(t->on_primary), 0);
+    lv_obj_set_style_text_font(continue_label, &lv_font_montserrat_16, 0);
+    lv_obj_align(continue_label, LV_ALIGN_CENTER, 0, 0);
+
+    /* Load screen */
+    lv_scr_load(scr);
+
+    /* Block until Continue is pressed */
+    ESP_LOGI(TAG, "Waiting for user to press Continue...");
+    xSemaphoreTake(s_time_sem, portMAX_DELAY);
+
+    /* Cleanup */
+    vSemaphoreDelete(s_time_sem);
+    s_time_sem = NULL;
+
+    /* Note: Don't delete screen here - display_clear_screen() in main.c will clean up */
+
+    ESP_LOGI(TAG, "Time onboarding complete, continuing boot...");
+}
+

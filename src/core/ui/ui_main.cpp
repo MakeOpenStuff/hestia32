@@ -13,6 +13,10 @@
 
 static const char *TAG = "ui_main";
 
+#ifndef HESTIA_ENABLE_MAIN_CLOCK_DISPLAY
+#define HESTIA_ENABLE_MAIN_CLOCK_DISPLAY 0
+#endif
+
 /* ─── Sensor data (thread-safe cache) ─────────────────────────── */
 static struct {
     float temperature;
@@ -351,19 +355,23 @@ static void create_current_pane(lv_obj_t *parent)
     lv_obj_set_style_pad_all(pane, UI_PAD, 0);
     lv_obj_clear_flag(pane, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* Time label */
+    /* Campaign build: hide clock/date by default to reduce non-critical feature surface. */
+#if HESTIA_ENABLE_MAIN_CLOCK_DISPLAY
     s_time_label = lv_label_create(pane);
     lv_label_set_text(s_time_label, "--:--");
     lv_obj_set_style_text_color(s_time_label, lv_color_hex(t->text), 0);
     lv_obj_set_style_text_font(s_time_label, &lv_font_montserrat_36, 0);
     lv_obj_align(s_time_label, LV_ALIGN_TOP_LEFT, 0, 4);
 
-    /* Date label */
     s_date_label = lv_label_create(pane);
     lv_label_set_text(s_date_label, "---");
     lv_obj_set_style_text_color(s_date_label, lv_color_hex(t->text_secondary), 0);
     lv_obj_set_style_text_font(s_date_label, &lv_font_montserrat_14, 0);
     lv_obj_align(s_date_label, LV_ALIGN_TOP_LEFT, 0, 48);
+#else
+    s_time_label = NULL;
+    s_date_label = NULL;
+#endif
 
     /* Temperature row: flex container so unit label always tracks value width */
     lv_obj_t *temp_row = lv_obj_create(pane);
@@ -980,6 +988,9 @@ static void select_domain(ui_domain_t domain)
 
 static void update_clock(void)
 {
+#if !HESTIA_ENABLE_MAIN_CLOCK_DISPLAY
+    return;
+#else
     time_t now;
     struct tm tm_info;
     time(&now);
@@ -1002,6 +1013,7 @@ static void update_clock(void)
                  MONTHS[tm_info.tm_mon]);
         lv_label_set_text(s_date_label, dbuf);
     }
+#endif
 }
 
 /* ─── Event callbacks ───────────────────────────────────────────── */

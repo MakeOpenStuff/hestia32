@@ -352,6 +352,8 @@ bool wifi_prov_is_provisioned(void)
 
 esp_err_t wifi_prov_start_ap(void)
 {
+	esp_err_t err;
+
 	/* Don't start AP if user explicitly skipped provisioning */
 	if (s_wifi_skipped) {
 		ESP_LOGI(TAG, "WiFi provisioning was skipped by user - not starting AP");
@@ -365,17 +367,44 @@ esp_err_t wifi_prov_start_ap(void)
 	}
 
 	s_ap_netif = esp_netif_create_default_wifi_ap();
+	if (s_ap_netif == NULL) {
+		ESP_LOGE(TAG, "Failed to create default WiFi AP netif");
+		return ESP_ERR_NO_MEM;
+	}
 	esp_netif_t *ap_netif = s_ap_netif;
 	esp_netif_ip_info_t ip_info;		IP4_ADDR(&ip_info.ip, 192, 168, 4, 1);
 		IP4_ADDR(&ip_info.gw, 192, 168, 4, 1);
 		IP4_ADDR(&ip_info.netmask, 255, 255, 255, 0);
-		esp_netif_dhcps_stop(ap_netif);
-		esp_netif_set_ip_info(ap_netif, &ip_info);
-		esp_netif_dhcps_start(ap_netif);
+		err = esp_netif_dhcps_stop(ap_netif);
+		if (err != ESP_OK && err != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED) {
+			ESP_LOGE(TAG, "esp_netif_dhcps_stop failed: %s", esp_err_to_name(err));
+			goto fail;
+		}
+
+		err = esp_netif_set_ip_info(ap_netif, &ip_info);
+		if (err != ESP_OK) {
+			ESP_LOGE(TAG, "esp_netif_set_ip_info failed: %s", esp_err_to_name(err));
+			goto fail;
+		}
+
+		err = esp_netif_dhcps_start(ap_netif);
+		if (err != ESP_OK && err != ESP_ERR_ESP_NETIF_DHCP_ALREADY_STARTED) {
+			ESP_LOGE(TAG, "esp_netif_dhcps_start failed: %s", esp_err_to_name(err));
+			goto fail;
+		}
 
 		wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-		ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-		ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+		err = esp_wifi_init(&cfg);
+		if (err != ESP_OK) {
+			ESP_LOGE(TAG, "esp_wifi_init failed: %s", esp_err_to_name(err));
+			goto fail;
+		}
+
+		err = esp_wifi_set_mode(WIFI_MODE_APSTA);
+		if (err != ESP_OK) {
+			ESP_LOGE(TAG, "esp_wifi_set_mode failed: %s", esp_err_to_name(err));
+			goto fail_wifi;
+		}
 
 		wifi_config_t wifi_config = {
 				.ap = {
@@ -390,8 +419,17 @@ esp_err_t wifi_prov_start_ap(void)
 				strncpy((char *)wifi_config.ap.password, PROV_AP_PASSWORD, sizeof(wifi_config.ap.password));
 		}
 
-		ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
-		ESP_ERROR_CHECK(esp_wifi_start());
+		err = esp_wifi_set_config(WIFI_IF_AP, &wifi_config);
+		if (err != ESP_OK) {
+			ESP_LOGE(TAG, "esp_wifi_set_config(AP) failed: %s", esp_err_to_name(err));
+			goto fail_wifi;
+		}
+
+		err = esp_wifi_start();
+		if (err != ESP_OK) {
+			ESP_LOGE(TAG, "esp_wifi_start failed: %s", esp_err_to_name(err));
+			goto fail_wifi;
+		}
 
 		// Start DNS server for captive portal
 		xTaskCreate(dns_server_task, "dns_server", 4096, NULL, 5, NULL);
@@ -407,6 +445,17 @@ esp_err_t wifi_prov_start_ap(void)
 		ESP_LOGI(TAG, "========================================");
 
 		return ESP_OK;
+
+fail_wifi:
+		esp_wifi_stop();
+		esp_wifi_deinit();
+
+fail:
+		if (s_ap_netif != NULL) {
+			esp_netif_destroy(s_ap_netif);
+			s_ap_netif = NULL;
+		}
+		return err;
 }
 
 void wifi_prov_stop_ap(void)

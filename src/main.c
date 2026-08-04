@@ -219,8 +219,7 @@ ESP_LOGE(TAG, "Display initialization failed");
 bool needs_onboarding = ui_onboarding_needed();
 
 if (needs_onboarding) {
-/* Create temporary simple UI for onboarding */
-display_create_ui(false, false);  // Basic UI for onboarding screen
+/* Start LVGL task (display_init already called, input device registered) */
 display_start_lvgl_task();
 ESP_LOGI(TAG, "Onboarding needed, showing onboarding screen...");
 ui_onboarding_show();  // Blocks until user presses Continue
@@ -241,7 +240,8 @@ ESP_LOGI(TAG, "Then open http://192.168.4.1 in your browser");
 ret = protocol_manager_start_provisioning();
 if (ret != ESP_OK) {
 ESP_LOGE(TAG, "Failed to start provisioning");
-return;
+ESP_LOGW(TAG, "Continuing without provisioning due to start error");
+goto create_main_ui;
 }
 ESP_LOGI(TAG, "Provisioning started");
 
@@ -274,9 +274,10 @@ display_clear_screen();
 }
 
 /* NOW create the main UI with timers (after onboarding and provisioning) */
+create_main_ui:
 display_create_ui(false, false);  // Load calibration from NVS, show full UI
 if (!needs_onboarding && is_provisioned) {
-display_start_lvgl_task();  // Start LVGL if not already started
+    display_start_lvgl_task();  // Start LVGL if not already started (skipped both onboarding and provisioning)
 }
 ESP_LOGI(TAG, "Display initialized successfully");
 }

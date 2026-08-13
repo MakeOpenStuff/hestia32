@@ -4,6 +4,7 @@
 #include "ui/ui_icons.h"
 #include "core/user_settings.h"
 #include "core/display_manager.h"
+#include "core/core_config.h"
 #include "lvgl.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -528,7 +529,8 @@ void ui_settings_system_open(void)
     lv_obj_set_style_text_color(uptime_label, lv_color_hex(t->text_secondary), 0);
 
     lv_obj_t *version_label = lv_label_create(s_pages[2]);
-    lv_label_set_text_fmt(version_label, "Version: %s", "v0.1.0-dev");
+		// show build version and date/time of build
+    lv_label_set_text_fmt(version_label, "Version: %s", APP_VERSION);
     lv_obj_set_style_text_color(version_label, lv_color_hex(t->text_secondary), 0);
 
     lv_obj_t *build_label = lv_label_create(s_pages[2]);

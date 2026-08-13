@@ -11,6 +11,13 @@
 #include <time.h>
 #include <cmath>
 
+#ifdef CONFIG_PROTOCOL_MQTT
+extern "C" {
+#include "protocols/mqtt/wifi_manager.h"
+}
+#include "esp_wifi.h"
+#endif
+
 static const char *TAG = "ui_main";
 
 #ifndef HESTIA_ENABLE_MAIN_CLOCK_DISPLAY
@@ -32,7 +39,7 @@ static lv_obj_t *s_date_label   = NULL;  /* "Tue, 8 Jul"            */
 static lv_obj_t *s_temp_label   = NULL;  /* "21.5"                  */
 static lv_obj_t *s_temp_unit    = NULL;  /* "°C"                    */
 static lv_obj_t *s_humi_label   = NULL;  /* "48"                    */
-static lv_obj_t *s_wifi_dot     = NULL;  /* 8px status dot          */
+static lv_obj_t *s_wifi_icon    = NULL;  /* live WiFi signal icon    */
 static lv_obj_t *s_eco_btn      = NULL;  /* eco/comfort toggle      */
 
 /* ─── Sidebar domain widgets ────────────────────────────────────── */
@@ -98,6 +105,7 @@ static void on_cool_minus(lv_event_t *e);
 static void on_cool_plus(lv_event_t *e);
 static void on_eco_toggle(lv_event_t *e);
 static void timer_cb(lv_timer_t *t);
+static void update_main_wifi_indicator(void);
 
 /* ─── Helper: small lv_obj styled button ───────────────────────── */
 static lv_obj_t *make_sp_btn(lv_obj_t *parent, const char *sym,
@@ -441,21 +449,6 @@ static void create_current_pane(lv_obj_t *parent)
     lv_obj_set_style_text_font(eco_icon, ICON_FONT_28 ? ICON_FONT_28 : &lv_font_montserrat_20, 0);  /* Larger icon */
     lv_obj_align(eco_icon, LV_ALIGN_CENTER, 0, 0);
 
-    /* WiFi status dot */
-    s_wifi_dot = lv_obj_create(pane);
-    lv_obj_set_size(s_wifi_dot, 8, 8);
-    lv_obj_set_style_bg_color(s_wifi_dot, lv_color_hex(t->inactive_color), 0);
-    lv_obj_set_style_bg_opa(s_wifi_dot, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(s_wifi_dot, 0, 0);
-    lv_obj_set_style_radius(s_wifi_dot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_align(s_wifi_dot, LV_ALIGN_BOTTOM_LEFT, 0, -4);
-
-    lv_obj_t *wifi_lbl = lv_label_create(pane);
-    lv_label_set_text(wifi_lbl, ICON_WIFI);
-    lv_obj_set_style_text_color(wifi_lbl, lv_color_hex(t->text_secondary), 0);
-    lv_obj_set_style_text_font(wifi_lbl, ICON_FONT_20 ? ICON_FONT_20 : &lv_font_montserrat_14, 0);
-    lv_obj_align(wifi_lbl, LV_ALIGN_BOTTOM_LEFT, 14, -4);
-
     /* Settings gear — placed in this pane (not the controls header) because the
      * controls header sits at y=0 in the top-right area of the display, which is
      * a double edge dead-zone for resistive touch.  This pane occupies x=80–255
@@ -473,6 +466,12 @@ static void create_current_pane(lv_obj_t *parent)
     lv_obj_add_flag(gear_btn, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_align(gear_btn, LV_ALIGN_BOTTOM_RIGHT, 0, -4);
     lv_obj_add_event_cb(gear_btn, on_settings_btn, LV_EVENT_CLICKED, NULL);
+
+#ifdef CONFIG_PROTOCOL_MQTT
+    /* WiFi icon anchored immediately left of the settings gear */
+    s_wifi_icon = ui_common_wifi_indicator_create(pane, 24, 24);
+    lv_obj_align_to(s_wifi_icon, gear_btn, LV_ALIGN_OUT_LEFT_MID, -8, 0);
+#endif
 
     lv_obj_t *gear_lbl = lv_label_create(gear_btn);
     lv_label_set_text(gear_lbl, ICON_SETTINGS);
@@ -1204,6 +1203,29 @@ static void timer_cb(lv_timer_t *t)
         snprintf(buf, sizeof(buf), "%d%%", hi);
         if (s_humi_label) lv_label_set_text(s_humi_label, buf);
     }
+
+    update_main_wifi_indicator();
+}
+
+static void update_main_wifi_indicator(void)
+{
+    if (!s_wifi_icon) {
+        return;
+    }
+
+#ifdef CONFIG_PROTOCOL_MQTT
+    bool connected = wifi_is_connected();
+    int rssi = -95;
+    if (connected) {
+        wifi_ap_record_t ap_info;
+        if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+            rssi = ap_info.rssi;
+        }
+    }
+    ui_common_wifi_indicator_update(s_wifi_icon, connected, rssi);
+#else
+    ui_common_wifi_indicator_update(s_wifi_icon, false, -95);
+#endif
 }
 
 /* ─── Public API ────────────────────────────────────────────────── */
@@ -1261,6 +1283,7 @@ void ui_main_create(lv_obj_t *scr)
 
     /* Initial clock update */
     update_clock();
+    update_main_wifi_indicator();
 }
 
 void ui_main_update_sensor(float temperature, float humidity, bool is_celsius)

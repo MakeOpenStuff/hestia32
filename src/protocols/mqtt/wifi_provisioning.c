@@ -493,96 +493,88 @@ bool wifi_prov_is_skipped(void)
 
 esp_err_t wifi_prov_reset(void)
 {
-		ESP_LOGI(TAG, "Starting factory reset...");
+	ESP_LOGI(TAG, "Starting WiFi reprovision reset");
 
-		// Erase all WiFi credentials from our NVS namespace
-		nvs_handle_t nvs_handle;
-		if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle) == ESP_OK) {
-				nvs_erase_all(nvs_handle);  // Erase entire namespace including SSID, password, provisioned flag
-				nvs_commit(nvs_handle);
-				nvs_close(nvs_handle);
-				ESP_LOGI(TAG, "Custom config namespace erased");
-		}
+	/*
+	 * Reset only this app's WiFi provisioning namespace.
+	 * Do NOT erase the full NVS partition, otherwise unrelated settings
+	 * (onboarding, model, touch calibration, locale, etc.) are lost.
+	 */
+	nvs_handle_t nvs_handle;
+	esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+	if (err != ESP_OK) {
+		ESP_LOGE(TAG, "Failed to open namespace '%s': %s", NVS_NAMESPACE, esp_err_to_name(err));
+		return err;
+	}
 
-		// Erase ESP-IDF WiFi configuration (stored in default NVS partition)
-		// Try different namespace names used by ESP-IDF
-		const char* wifi_namespaces[] = {"nvs.net80211", "esp_wifi", "wifi", "nvs"};
-		for (int i = 0; i < 4; i++) {
-				if (nvs_open(wifi_namespaces[i], NVS_READWRITE, &nvs_handle) == ESP_OK) {
-						nvs_erase_all(nvs_handle);
-						nvs_commit(nvs_handle);
-						nvs_close(nvs_handle);
-						ESP_LOGI(TAG, "Erased namespace: %s", wifi_namespaces[i]);
-				}
-		}
+	err = nvs_erase_all(nvs_handle);
+	if (err == ESP_OK) {
+		err = nvs_commit(nvs_handle);
+	}
+	nvs_close(nvs_handle);
 
-		// Force erase entire NVS partition as last resort
-		ESP_LOGW(TAG, "Erasing entire NVS flash...");
-		esp_err_t ret = nvs_flash_erase();
-		if (ret == ESP_OK) {
-				ESP_LOGI(TAG, "NVS flash erased successfully");
-				// Reinitialize NVS after erase
-				ret = nvs_flash_init();
-				if (ret == ESP_OK) {
-						ESP_LOGI(TAG, "NVS reinitialized");
-				}
-		}
+	if (err != ESP_OK) {
+		ESP_LOGE(TAG, "Failed to erase WiFi provisioning data: %s", esp_err_to_name(err));
+		return err;
+	}
 
-		ESP_LOGI(TAG, "Provisioning reset complete - all credentials erased");
-		return ESP_OK;
-}esp_err_t wifi_prov_get_config(wifi_config_data_t *config)
+	ESP_LOGI(TAG, "WiFi provisioning data erased");
+	return ESP_OK;
+}
+
+esp_err_t wifi_prov_get_config(wifi_config_data_t *config)
 {
-		if (!config) {
-				return ESP_ERR_INVALID_ARG;
-		}
-		memset(config, 0, sizeof(wifi_config_data_t));
+	if (!config) {
+		return ESP_ERR_INVALID_ARG;
+	}
+	memset(config, 0, sizeof(wifi_config_data_t));
 
-		nvs_handle_t nvs_handle;
-		if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_handle) == ESP_OK) {
-				size_t len;
+	nvs_handle_t nvs_handle;
+	if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs_handle) == ESP_OK) {
+		size_t len;
 
-				// Read SSID
-				len = MAX_SSID_LEN;
-				nvs_get_str(nvs_handle, "ssid", config->ssid, &len);
+		// Read SSID
+		len = MAX_SSID_LEN;
+		nvs_get_str(nvs_handle, "ssid", config->ssid, &len);
 
-				// Read password
-				len = MAX_PASSWORD_LEN;
-				nvs_get_str(nvs_handle, "password", config->password, &len);
+		// Read password
+		len = MAX_PASSWORD_LEN;
+		nvs_get_str(nvs_handle, "password", config->password, &len);
 
-				// Read server URL
-				len = MAX_SERVER_URL_LEN;
-				nvs_get_str(nvs_handle, "server_url", config->server_url, &len);
+		// Read server URL
+		len = MAX_SERVER_URL_LEN;
+		nvs_get_str(nvs_handle, "server_url", config->server_url, &len);
 
-				// Read node name
-				len = MAX_NODE_NAME_LEN;
-				nvs_get_str(nvs_handle, "node_name", config->node_name, &len);
+		// Read node name
+		len = MAX_NODE_NAME_LEN;
+		nvs_get_str(nvs_handle, "node_name", config->node_name, &len);
 
-				// Check provisioned flag
-				uint8_t provisioned = 0;
-				nvs_get_u8(nvs_handle, "provisioned", &provisioned);
-				config->provisioned = (provisioned == 1);
+		// Check provisioned flag
+		uint8_t provisioned = 0;
+		nvs_get_u8(nvs_handle, "provisioned", &provisioned);
+		config->provisioned = (provisioned == 1);
 
-				// Read OTA settings (with defaults)
-				uint8_t ota_enabled = 0;  // Disabled by default - enable via UI or provisioning
-				nvs_get_u8(nvs_handle, "ota_enabled", &ota_enabled);
-				config->ota_auto_update = (ota_enabled == 1);
+		// Read OTA settings (with defaults)
+		uint8_t ota_enabled = 0;  // Disabled by default - enable via UI or provisioning
+		nvs_get_u8(nvs_handle, "ota_enabled", &ota_enabled);
+		config->ota_auto_update = (ota_enabled == 1);
 
-				uint8_t channel = 0;  // Default: stable
-				nvs_get_u8(nvs_handle, "ota_channel", &channel);
-				config->ota_release_channel = channel;
+		uint8_t channel = 0;  // Default: stable
+		nvs_get_u8(nvs_handle, "ota_channel", &channel);
+		config->ota_release_channel = channel;
 
-				uint32_t interval = 24;  // Default: 24 hours
-				nvs_get_u32(nvs_handle, "ota_interval", &interval);
-				config->ota_check_interval = interval;
+		uint32_t interval = 24;  // Default: 24 hours
+		nvs_get_u32(nvs_handle, "ota_interval", &interval);
+		config->ota_check_interval = interval;
 
-				uint64_t last_check = 0;
-				nvs_get_u64(nvs_handle, "ota_last_check", &last_check);
-				config->ota_last_check = last_check;
+		uint64_t last_check = 0;
+		nvs_get_u64(nvs_handle, "ota_last_check", &last_check);
+		config->ota_last_check = last_check;
 
-				nvs_close(nvs_handle);
-		}
+		nvs_close(nvs_handle);
+	}
 
-		return ESP_OK;
+	return ESP_OK;
 }
 
 esp_err_t wifi_prov_save_config(const wifi_config_data_t *config)

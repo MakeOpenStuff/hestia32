@@ -1,6 +1,20 @@
 #include "ui/ui_common.h"
 #include "ui/ui_theme.h"
+#include "ui/ui_icons.h"
 #include <string.h>
+#include <stdint.h>
+
+static int wifi_segments_from_rssi(int rssi)
+{
+    int quality = (rssi + 100) * 2;  /* -100dBm -> 0, -50dBm -> 100 */
+    if (quality < 0) quality = 0;
+    if (quality > 100) quality = 100;
+
+    int segments = (quality * UI_WIFI_SEGMENT_COUNT + 99) / 100;
+    if (segments < 1) segments = 1;
+    if (segments > UI_WIFI_SEGMENT_COUNT) segments = UI_WIFI_SEGMENT_COUNT;
+    return segments;
+}
 
 /* ---------- Screen navigation stack ---------- */
 #define NAV_STACK_MAX 8
@@ -228,4 +242,82 @@ lv_obj_t *ui_common_toggle_row(lv_obj_t *parent, const char *label_text,
     lv_obj_set_style_bg_color(sw, lv_color_hex(ui_theme_get()->primary), (lv_style_selector_t)(LV_PART_INDICATOR | LV_STATE_CHECKED));
     if (cb) lv_obj_add_event_cb(sw, cb, LV_EVENT_VALUE_CHANGED, user_data);
     return sw;
+}
+
+lv_obj_t *ui_common_wifi_indicator_create(lv_obj_t *parent, int width, int height)
+{
+    lv_obj_t *wrap = lv_obj_create(parent);
+    lv_obj_set_size(wrap, width, height);
+    lv_obj_remove_style_all(wrap);
+    lv_obj_set_style_bg_opa(wrap, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(wrap, 0, 0);
+    lv_obj_set_style_pad_all(wrap, 0, 0);
+    lv_obj_clear_flag(wrap, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *icon = lv_label_create(wrap);
+    lv_label_set_text(icon, ICON_WIFI);
+    lv_obj_set_style_text_font(icon, ICON_FONT_20 ? ICON_FONT_20 : &lv_font_montserrat_14, 0);
+    lv_obj_align(icon, LV_ALIGN_CENTER, 0, 0);
+
+    lv_obj_t *dot = lv_obj_create(wrap);
+    lv_obj_remove_style_all(dot);
+    int dot_sz = (height >= 20) ? 5 : 4;
+    lv_obj_set_size(dot, dot_sz, dot_sz);
+    lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_width(dot, 0, 0);
+    lv_obj_set_style_pad_all(dot, 0, 0);
+    lv_obj_set_pos(dot, width - dot_sz, height - dot_sz);
+
+    lv_obj_t *slash = lv_label_create(wrap);
+    lv_label_set_text(slash, "/");
+    lv_obj_set_style_text_font(slash, &lv_font_montserrat_16, 0);
+    lv_obj_align(slash, LV_ALIGN_CENTER, 0, 1);
+
+    ui_common_wifi_indicator_update(wrap, false, -95);
+    return wrap;
+}
+
+void ui_common_wifi_indicator_update(lv_obj_t *indicator, bool connected, int rssi)
+{
+    if (!indicator) {
+        return;
+    }
+
+    const hestia_theme_t *t = ui_theme_get();
+    int lit = connected ? wifi_segments_from_rssi(rssi) : 0;
+
+    uint32_t active_color = 0x2E7D32;
+    if (connected) {
+        int pct = (lit * 100) / UI_WIFI_SEGMENT_COUNT;
+        if (pct < 67) {
+            active_color = (pct < 34) ? 0xC62828 : 0xF57C00;
+        }
+    }
+
+    uint32_t inactive_color = t->text_secondary;
+    uint32_t offline_color = t->text_secondary;
+
+    lv_obj_t *icon = lv_obj_get_child(indicator, 0);
+    if (icon) {
+        lv_obj_set_style_text_color(icon,
+                                    lv_color_hex(connected ? active_color : inactive_color),
+                                    0);
+    }
+
+    lv_obj_t *dot = lv_obj_get_child(indicator, 1);
+    if (dot) {
+        lv_obj_set_style_bg_color(dot,
+                                  lv_color_hex(connected ? active_color : offline_color),
+                                  0);
+    }
+
+    lv_obj_t *slash = lv_obj_get_child(indicator, 2);
+    if (slash) {
+        lv_obj_set_style_text_color(slash, lv_color_hex(offline_color), 0);
+        if (connected) {
+            lv_obj_add_flag(slash, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_clear_flag(slash, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
 }

@@ -80,6 +80,21 @@ void ui_common_badge_update(lv_obj_t *badge, const char *text, uint32_t color);
 lv_obj_t *ui_common_toggle_row(lv_obj_t *parent, const char *label_text,
                                 lv_event_cb_t cb, void *user_data);
 
+/* Number of visual segments used by WiFi indicator widgets. */
+#define UI_WIFI_SEGMENT_COUNT 3
+
+/*
+ * Create a smartphone-style WiFi indicator ("pizza" arcs + dot).
+ * The returned object is a container; call ui_common_wifi_indicator_update()
+ * to set connection state and RSSI.
+ */
+lv_obj_t *ui_common_wifi_indicator_create(lv_obj_t *parent, int width, int height);
+
+/*
+ * Update WiFi indicator segments/colors from connection state and RSSI.
+ */
+void ui_common_wifi_indicator_update(lv_obj_t *indicator, bool connected, int rssi);
+
 /*
  * Push a screen (creates transition).
  * Stores previous screen for back navigation.

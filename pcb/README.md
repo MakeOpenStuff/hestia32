@@ -13,10 +13,10 @@ Resulting variants:
 
 | Variant | Folder | BOM | Interactive BOM |
 |---------|--------|-----|-----------------|
-| DevKit-EU | DevKit-EU/ | - | - |
-| DevKit-HVAC | DevKit-HVAC/ | - | - |
-| XIAO-EU | [XIAO-EU/](XIAO-EU/) | [BOM](https://github.com/MakeOpenStuff/hestia32/blob/develop/pcb/XIAO-EU/BOM_Hestia32-EU_XIAO.csv) | [iBOM](https://htmlpreview.github.io/?https://github.com/MakeOpenStuff/hestia32/blob/develop/pcb/XIAO-EU/iBOM_Hestia32-EU_XIAO.html) |
 | XIAO-HVAC | [XIAO-HVAC/](XIAO-HVAC/) | [BOM](https://github.com/MakeOpenStuff/hestia32/blob/develop/pcb/XIAO-HVAC/BOM_Hestia32-HVAC_XIAO.csv) | [iBOM](https://htmlpreview.github.io/?https://github.com/MakeOpenStuff/hestia32/blob/develop/pcb/XIAO-HVAC/iBOM_Hestia32-HVAC_XIAO.html) |
+| XIAO-EU | [XIAO-EU/](XIAO-EU/) | [BOM](https://github.com/MakeOpenStuff/hestia32/blob/develop/pcb/XIAO-EU/BOM_Hestia32-EU_XIAO.csv) | [iBOM](https://htmlpreview.github.io/?https://github.com/MakeOpenStuff/hestia32/blob/develop/pcb/XIAO-EU/iBOM_Hestia32-EU_XIAO.html) |
+| DevKit-HVAC | [DevKit-HVAC/](DevKit-HVAC/) | [BOM](https://github.com/MakeOpenStuff/hestia32/blob/develop/pcb/DevKit-HVAC/BOM_Hestia32-HVAC_DevKit.csv) | [iBOM](https://htmlpreview.github.io/?https://github.com/MakeOpenStuff/hestia32/blob/develop/pcb/DevKit-HVAC/iBOM_Hestia32-HVAC_DevKit.html) |
+| DevKit-EU | [DevKit-EU/](DevKit-EU/) | [BOM](https://github.com/MakeOpenStuff/hestia32/blob/develop/pcb/DevKit-EU/BOM_Hestia32-EU_DevKit.csv) | [iBOM](https://htmlpreview.github.io/?https://github.com/MakeOpenStuff/hestia32/blob/develop/pcb/DevKit-EU/iBOM_Hestia32-EU_DevKit.html) |
 
 ## History
 
@@ -68,6 +68,12 @@ Resulting variants:
 - `v1.0`:
   - First complete PCB design release for the Hestia32 XIAO variant.
 
+### DevKit-HVAC
+- `v1.0`: Initial design based off XIAO-HVAC v1.7. Not tested.
+
+### DevKit-EU
+- `v1.0`: Initial design based off XIAO-EU v1.7. Not tested.
+
 ## TODO (Future Improvements)
 
 - [x] Develop XIAO-EU
@@ -88,18 +94,19 @@ Resulting variants:
 - [x] Renumber components prefixes without gaps
 - [x] Add unpopulated additional GPIOs pins from port expander
 - [x] Increase clearance around holes in case user uses large metal screw or washer
-- [ ] Develop DevKit-EU
-  - [ ] Schematic
-  - [ ] BOM
-  - [ ] Gerber
-  - [ ] Use coil relays instead of solid-state relays
-  - [ ] Support heat pumps
-  - [ ] Improve filtering
-- [ ] Develop DevKit-HVAC
-  - [ ] Schematic
-  - [ ] BOM
-  - [ ] Gerber
-  - [ ] Use coil relays instead of solid-state relays
-  - [ ] Support heat pumps
-  - [ ] Use LM2596 for power supply
-  - [ ] Improve filtering
+- [x] Develop DevKit-EU
+  - [x] Schematic
+  - [x] BOM
+  - [x] Gerber
+  - [x] Use coil relays instead of solid-state relays
+  - [x] Support heat pumps
+  - [x] Improve filtering
+- [x] Develop DevKit-HVAC
+  - [x] Schematic
+  - [x] BOM
+  - [x] Gerber
+  - [x] Use coil relays instead of solid-state relays
+  - [x] Support heat pumps
+  - [x] Use LM2596 for power supply
+  - [x] Improve filtering
+- [ ] Manufacture Hestia32 Development Board

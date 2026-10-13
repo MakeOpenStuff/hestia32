@@ -33,7 +33,7 @@ This file was originally written for ESP32-C5-DevKitC-1 wiring. XIAO uses a diff
 - **Display**: GPIO 6-10, 13 (SPI + backlight)
 - **Touch**: GPIO 2, 14, 15 (shared SPI on 6-7)
 - **SHT45 Sensor**: GPIO 4 (SCL), GPIO 5 (SDA) - I2C
-- **Relays**: GPIO 0, 1, 3, 26, 24
+- **Relays**: GPIO 0, 1, 3, 26, 24 driving TBD62083 inputs (active-LOW)
 - **Reserved**: TX0/RX0 (GPIO 11/12 - UART0), GPIO 28 (BOOT), RTS
 
 ---
@@ -188,23 +188,23 @@ Wire each TCA9555 output pin to relay-driver input negative, with input positive
 ## Relays
 
 ### Relay Configuration
-- DevKit: 5 direct GPIO outputs
+- DevKit: 5 direct GPIO outputs to TBD62083 relay-driver inputs
 - XIAO: 5 outputs via TCA9555 pins 0-4 driving TBD62083 channels
 
 ### Pin Connections
 
-| Relay | ESP32-C5 GPIO | Function | Notes |
-|-------|---------------|----------|-------|
-| Relay 1 | GPIO 0  | Output 1 | Active LOW - GPIO LOW = Relay ON |
-| Relay 2 | GPIO 1  | Output 2 | Active LOW - GPIO LOW = Relay ON |
-| Relay 3 | GPIO 3  | Output 3 | Active LOW - GPIO LOW = Relay ON |
-| Relay 4 | GPIO 26 | Output 4 | Active LOW - GPIO LOW = Relay ON |
-| Relay 5 | GPIO 24 | Output 5 | Active LOW - GPIO LOW = Relay ON |
+| Relay | DevKit GPIO | XIAO TCA9555 pin | Function | Notes |
+|-------|-------------|------------------|----------|-------|
+| Relay 1 | GPIO 0 | P0 | Output 1 | Active LOW - LOW = Relay ON |
+| Relay 2 | GPIO 1 | P1 | Output 2 | Active LOW - LOW = Relay ON |
+| Relay 3 | GPIO 3 | P2 | Output 3 | Active LOW - LOW = Relay ON |
+| Relay 4 | GPIO 26 | P3 | Output 4 | Active LOW - LOW = Relay ON |
+| Relay 5 | GPIO 24 | P4 | Output 5 | Active LOW - LOW = Relay ON |
 
 ### Relay Control
 - **Logic Level**: Configurable in firmware (`CONFIG_RELAY_ACTIVE_LOW`)
-- **Wiring**: Relay control + pin → +5V, control - pin → ESP32 GPIO
-- **Control Type**: Direct GPIO output (DevKit) or TCA9555 I2C expander (XIAO)
+- **Wiring**: DevKit GPIOs or XIAO TCA9555 pins connect to the corresponding TBD62083 inputs
+- **Control Type**: Direct GPIO (DevKit) or TCA9555 I2C expander (XIAO), both through TBD62083
 
 ### Why Use Active-LOW (Optional)
 - **Fail-safe**: GPIOs default HIGH during boot can keep relays OFF
@@ -219,19 +219,19 @@ Wire each TCA9555 output pin to relay-driver input negative, with input positive
 
 ### PCB Wiring Example (per relay channel)
 ```
-+5V ──────────────────────► [+] Relay Driver Input
-							[-] Relay Driver Input ──► ESP32 GPIO (0, 1, 3, 26, or 24)
-
-GND ───────────────────────────────────────────► Ground
+ESP32 GPIO (0, 1, 3, 26 and 24) ──► TBD62083 input
+TBD62083 output ──────────────────► Relay coil
++5V ──────────────────────────────► Relay coil supply
+ESP32 and TBD62083 share a common ground
 ```
 
 When configured as active-LOW:
-- GPIO = LOW (0V): Relay ON
-- GPIO = HIGH (3.3V): Relay OFF
+- Driver input = LOW: Relay ON
+- Driver input = HIGH: Relay OFF
 
 When configured as active-HIGH:
-- GPIO = HIGH (3.3V): Relay ON
-- GPIO = LOW (0V): Relay OFF
+- Driver input = HIGH: Relay ON
+- Driver input = LOW: Relay OFF
 
 ---
 
@@ -240,12 +240,12 @@ When configured as active-HIGH:
 ### Reserved/In Use
 | GPIO | Function | Notes |
 |------|----------|-------|
-| 0 | Relay 1 | Relay control |
-| 1 | Relay 2 | Relay control |
+| 0 | Relay 1 | TBD62083 control |
+| 1 | Relay 2 | TBD62083 control |
 | 2 | Touch MISO | XPT2046 data out |
-| 3 | Relay 3 | Relay control |
-| 4 | SHT45 SDA | I2C data |
-| 5 | SHT45 SCL | I2C clock |
+| 3 | Relay 3 | TBD62083 control |
+| 4 | SHT45 SCL | I2C clock |
+| 5 | SHT45 SDA | I2C data |
 | 6 | SPI Clock | Shared display/touch |
 | 7 | SPI MOSI | Shared display/touch |
 | 8 | Display DC | Data/Command |
@@ -256,8 +256,8 @@ When configured as active-HIGH:
 | 13 | Backlight | PWM control |
 | 14 | Touch CS | Touch chip select |
 | 15 | Touch IRQ | Touch interrupt |
-| 26 | Relay 4 | Relay control |
-| 24 | Relay 5 | Relay control |
+| 26 | Relay 4 | TBD62083 control |
+| 24 | Relay 5 | TBD62083 control |
 
 ### Available GPIOs
 Check ESP32-C5 pinout under /docs/esp32-c5/ for additional available GPIOs not listed above.
